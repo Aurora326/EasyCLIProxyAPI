@@ -33,14 +33,6 @@ EasyCLIProxyAPI 是基于 [CLIProxyAPI](https://github.com/router-for-me/CLIProx
 - **现代科技质感界面（Tech Blue Pro）**：采用全新科技蓝与高对比度界面布局，搭载沉浸式能量反应堆核心运转指示环，视觉清晰且无多余光污染。
 - **开发者接入代码生成器**：首页内置 cURL、Python、Node.js 与 .env 完整调用范例，点击即可复制即用代码。
 
-## 赞助商
-
-[![https://go.apimart.ai/gh-easycliproxyapi](./assets/apimart-zh.png)](https://go.apimart.ai/gh-easycliproxyapi)
-
-感谢 APIMart 对本项目的赞助！
-
-APIMart 是一个低成本的 AI 图像与视频生成 API 平台，提供灵活便捷的异步任务接口与按量计费机制。详情可参阅 [APIMart 官方页面](https://go.apimart.ai/gh-easycliproxyapi)。
-
 ## 功能导览
 
 ### 1. 核心看板与快捷控制
