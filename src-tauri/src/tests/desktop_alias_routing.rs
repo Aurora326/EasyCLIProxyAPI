@@ -21,9 +21,9 @@ fn desktop_routes_preserve_api_access_when_switching_models() {
         let models = after["codex-api-key"][0]["models"].as_array_mut().unwrap();
         assert_eq!(models.len(), 5);
         for route in [
+            CLAUDE_DESKTOP_FABLE_MODEL_ID,
             CLAUDE_DESKTOP_OPUS_MODEL_ID,
             CLAUDE_DESKTOP_SONNET_MODEL_ID,
-            CLAUDE_DESKTOP_HAIKU_MODEL_ID,
         ] {
             assert!(models
                 .iter()
@@ -57,9 +57,9 @@ fn desktop_routes_move_from_disabled_provider_to_enabled_source() {
     );
     let active_models = after["codex-api-key"][0]["models"].as_array().unwrap();
     for route in [
+        CLAUDE_DESKTOP_FABLE_MODEL_ID,
         CLAUDE_DESKTOP_OPUS_MODEL_ID,
         CLAUDE_DESKTOP_SONNET_MODEL_ID,
-        CLAUDE_DESKTOP_HAIKU_MODEL_ID,
     ] {
         assert!(active_models
             .iter()
@@ -136,9 +136,9 @@ fn legacy_desktop_alias_only_provider_retains_its_source_during_reconfiguration(
     original_provider.as_object_mut().unwrap().remove("models");
     assert_eq!(provider, original_provider);
     for route in [
+        CLAUDE_DESKTOP_FABLE_MODEL_ID,
         CLAUDE_DESKTOP_OPUS_MODEL_ID,
         CLAUDE_DESKTOP_SONNET_MODEL_ID,
-        CLAUDE_DESKTOP_HAIKU_MODEL_ID,
     ] {
         let entry = entries
             .as_array()
@@ -226,9 +226,9 @@ fn legacy_desktop_roles_resolve_from_the_same_original_configuration() {
     let after = json(&updated);
     let entries = after["codex-api-key"][0]["models"].as_array().unwrap();
     for (alias, source) in [
+        (CLAUDE_DESKTOP_FABLE_MODEL_ID, "new-model"),
         (CLAUDE_DESKTOP_OPUS_MODEL_ID, "new-model"),
         (CLAUDE_DESKTOP_SONNET_MODEL_ID, "old-model"),
-        (CLAUDE_DESKTOP_HAIKU_MODEL_ID, "new-model"),
     ] {
         assert!(entries
             .iter()

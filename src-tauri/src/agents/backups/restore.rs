@@ -50,18 +50,20 @@ fn desktop_restore_models(plan: &RestorePlan) -> Result<Option<Vec<AgentModelOpt
         .filter_map(|m| m.get("name").and_then(Value::as_str))
         .collect::<Vec<_>>();
     let routes = [
+        CLAUDE_DESKTOP_FABLE_MODEL_ID,
         CLAUDE_DESKTOP_OPUS_MODEL_ID,
         CLAUDE_DESKTOP_SONNET_MODEL_ID,
-        CLAUDE_DESKTOP_HAIKU_MODEL_ID,
     ];
     let mappings =
         plan.version.mappings.as_ref().ok_or(
             "此备份版本缺少 Claude Desktop 模型映射，无法安全恢复内核路由，请重新配置模型",
         )?;
+    let fable_source = mappings.effective_fable().to_string();
+    let sources = [&fable_source, &mappings.opus, &mappings.sonnet];
     Ok(Some(
         routes
             .into_iter()
-            .zip([&mappings.opus, &mappings.sonnet, &mappings.haiku])
+            .zip(sources)
             .map(|(route, source)| AgentModelOption {
                 input_modalities: None,
                 harness_metadata: None,
@@ -85,6 +87,7 @@ fn attach_core_restore(
     let target =
         serde_norway::from_str::<serde_norway::Value>(&after).map_err(|e| e.to_string())?;
     for route in [
+        CLAUDE_DESKTOP_FABLE_MODEL_ID,
         CLAUDE_DESKTOP_OPUS_MODEL_ID,
         CLAUDE_DESKTOP_SONNET_MODEL_ID,
         CLAUDE_DESKTOP_HAIKU_MODEL_ID,

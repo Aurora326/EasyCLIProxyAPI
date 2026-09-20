@@ -24,9 +24,11 @@ export function detectThemePreference(): ThemePreference {
 function applyTheme(theme: AppTheme): void {
   document.documentElement.dataset.theme = theme;
   document.documentElement.style.colorScheme = theme;
-  document.documentElement.style.backgroundColor = WINDOW_BACKGROUND[theme];
+  const isAnime = document.documentElement.dataset.anime === 'true';
+  const bg = isAnime ? 'transparent' : WINDOW_BACKGROUND[theme];
+  document.documentElement.style.backgroundColor = bg;
   if (document.body) {
-    document.body.style.backgroundColor = WINDOW_BACKGROUND[theme];
+    document.body.style.backgroundColor = bg;
   }
 }
 

@@ -18,9 +18,11 @@ export type AgentConfigurationAction = 'apply' | 'update' | 'close';
 export type ClaudeModelMappingClientId = 'claude-code' | 'claude-desktop';
 
 export type AgentModelMappings = {
+  fable: string;
   opus: string;
   sonnet: string;
-  haiku: string;
+  haiku?: string;
+  fable1m?: boolean;
   opus1m?: boolean;
   sonnet1m?: boolean;
   haiku1m?: boolean;
@@ -50,12 +52,12 @@ export const sameAgentModel = (left: string, right: string) => (
 export const sameAgentModelMappings = (
   left: AgentModelMappings,
   right: AgentModelMappings,
-) => sameAgentModel(left.opus, right.opus)
+) => sameAgentModel(left.fable ?? left.haiku ?? '', right.fable ?? right.haiku ?? '')
+  && sameAgentModel(left.opus, right.opus)
   && sameAgentModel(left.sonnet, right.sonnet)
-  && sameAgentModel(left.haiku, right.haiku)
+  && Boolean(left.fable1m ?? left.haiku1m) === Boolean(right.fable1m ?? right.haiku1m)
   && Boolean(left.opus1m) === Boolean(right.opus1m)
   && Boolean(left.sonnet1m) === Boolean(right.sonnet1m)
-  && Boolean(left.haiku1m) === Boolean(right.haiku1m)
   && (left.maxContextTokens ?? 200_000) === (right.maxContextTokens ?? 200_000)
   && (left.autoCompactPct ?? 90) === (right.autoCompactPct ?? 90)
   && Boolean(left.disableAutoCompact) === Boolean(right.disableAutoCompact);

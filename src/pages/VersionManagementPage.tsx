@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { getVersion } from '@tauri-apps/api/app';
-import { invoke } from '@tauri-apps/api/core';
+import { invoke, isTauri } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import {
   Download,
@@ -343,39 +343,41 @@ export function VersionManagementPage() {
     let unlistenConfig: (() => void) | null = null;
     let unlistenVersionSource: (() => void) | null = null;
 
-    listen<CoreInstallTask>('core-install-progress', (event) => {
-      const showTaskUi = manualInstallInProgressRef.current;
-      applyInstallTask(event.payload, showTaskUi, showTaskUi);
-      if (!event.payload.running) {
-        manualInstallInProgressRef.current = false;
-      }
-    })
-      .then((unlistenProgress) => {
-        if (disposed) unlistenProgress();
-        else unlisten = unlistenProgress;
+    if (isTauri()) {
+      listen<CoreInstallTask>('core-install-progress', (event) => {
+        const showTaskUi = manualInstallInProgressRef.current;
+        applyInstallTask(event.payload, showTaskUi, showTaskUi);
+        if (!event.payload.running) {
+          manualInstallInProgressRef.current = false;
+        }
       })
-      .catch(() => undefined);
+        .then((unlistenProgress) => {
+          if (disposed) unlistenProgress();
+          else unlisten = unlistenProgress;
+        })
+        .catch(() => undefined);
 
-    void listen('config-files-changed', () => {
-      if (disposed) return;
-      void loadVersionSourceSettings();
-      void refreshStatus();
-    }).then((stop) => {
-      if (disposed) stop();
-      else unlistenConfig = stop;
-    });
+      void listen('config-files-changed', () => {
+        if (disposed) return;
+        void loadVersionSourceSettings();
+        void refreshStatus();
+      }).then((stop) => {
+        if (disposed) stop();
+        else unlistenConfig = stop;
+      });
 
-    void listen<VersionSourceSettings>('version-download-source-changed', (event) => {
-      if (disposed) return;
-      setVersionSource(event.payload);
-      setVersionSourceError('');
-      showNotice({ key: 'kernel.versions.sourceAutoSwitched', variables: {
-        source: downloadSourceLabel(event.payload.source, t),
-      } }, 'info');
-    }).then((stop) => {
-      if (disposed) stop();
-      else unlistenVersionSource = stop;
-    });
+      void listen<VersionSourceSettings>('version-download-source-changed', (event) => {
+        if (disposed) return;
+        setVersionSource(event.payload);
+        setVersionSourceError('');
+        showNotice({ key: 'kernel.versions.sourceAutoSwitched', variables: {
+          source: downloadSourceLabel(event.payload.source, t),
+        } }, 'info');
+      }).then((stop) => {
+        if (disposed) stop();
+        else unlistenVersionSource = stop;
+      });
+    }
 
     loadInstallTask();
     void loadVersionSourceSettings();

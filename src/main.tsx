@@ -5,6 +5,7 @@ import App from './App';
 import { I18nProvider } from './i18n';
 import { initializeTheme } from './theme';
 import './styles.css';
+import './apple-theme.css';
 
 initializeTheme();
 

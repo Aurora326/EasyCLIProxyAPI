@@ -5,7 +5,6 @@ import { MessageNotice, FloatingNotice, useAppNotice } from '../appNotice';
 import { AuthFileModelsDialog } from '../components/AuthFileModelsDialog';
 import {
   Check,
-  Copy,
   FileDown,
   FolderOpen,
   Import,
@@ -39,6 +38,7 @@ import {
   loadQuota,
   providerForFile as quotaProviderForFile,
   quotaKey,
+  quotaTone,
   type QuotaState,
 } from '../services/quotaService';
 import {
@@ -141,18 +141,29 @@ function AuthFileQuotaSummary({ quota, name }: { quota: QuotaState; name: string
   return (
     <div className="auth-file-quota" aria-label={t('authFiles.quota.aria')}>
       {quota.plan ? <span className="auth-file-quota-plan">{quota.plan}</span> : null}
-      {quota.rows.length > 0 ? quota.rows.map((row, index) => {
-        const reset = formatQuotaReset(row.resetAtMs, row.reset, locale, now);
-        const detail = [row.detail, reset].filter(Boolean).join(' · ');
-        return (
-          <span className="auth-file-quota-item" key={`${row.label}-${index}`} title={detail || undefined}>
-            <span>{row.label}</span>
-            <strong>{row.remainingPercent === null ? '—' : `${Math.round(row.remainingPercent)}%`}</strong>
-            {reset ? <small>{reset}</small> : null}
-            {row.remainingPercent === null && row.detail ? <small>{row.detail}</small> : null}
-          </span>
-        );
-      }) : <span className="auth-file-quota-empty">{t('authFiles.quota.empty')}</span>}
+      {quota.rows.length > 0 ? (
+        <div className="quota-row-list auth-file-quota-rows">
+          {quota.rows.map((row, index) => {
+            const reset = formatQuotaReset(row.resetAtMs, row.reset, locale, now);
+            return (
+              <div className="real-quota-row" data-tone={quotaTone(row.remainingPercent)} key={`${row.label}-${index}`}>
+                <div>
+                  <span>{row.label}</span>
+                  <strong>{row.remainingPercent === null ? '—' : t('quota.remaining', { percent: Math.round(row.remainingPercent) })}</strong>
+                </div>
+                {row.remainingPercent !== null ? (
+                  <div className="real-quota-track">
+                    <span style={{ width: `${Math.max(0, Math.min(100, row.remainingPercent))}%` }} />
+                  </div>
+                ) : null}
+                {[row.detail, reset].filter(Boolean).length > 0 ? (
+                  <small>{[row.detail, reset].filter(Boolean).join(' · ')}</small>
+                ) : null}
+              </div>
+            );
+          })}
+        </div>
+      ) : <span className="auth-file-quota-empty">{t('authFiles.quota.empty')}</span>}
       {quota.resetCredits !== undefined ? (
         <span className="auth-file-quota-credit">{t('authFiles.quota.resets', { count: quota.resetCredits })}</span>
       ) : null}
@@ -178,7 +189,6 @@ export function AuthFileManagementPage() {
   const [error, setError] = useState('');
   const feedback = useAppNotice();
   const { showNotice } = feedback;
-  const [copied, setCopied] = useState('');
   const [priorityEditor, setPriorityEditor] = useState<PriorityEditor | null>(null);
   const [oauthModelTarget, setOauthModelTarget] = useState<OAuthModelTarget | null>(null);
   const [oauthModelSettings, setOauthModelSettings] = useState<OAuthModelSettings | null>(null);
@@ -462,16 +472,6 @@ export function AuthFileManagementPage() {
     }
   };
 
-  const copyName = async (name: string) => {
-    try {
-      await navigator.clipboard.writeText(name);
-      setCopied(name);
-      window.setTimeout(() => setCopied((current) => (current === name ? '' : current)), 1500);
-    } catch {
-      setError(t('common.copyFailed'));
-    }
-  };
-
   const disabledCount = files.filter((file) => readBoolean(file, 'disabled')).length;
   const runtimeCount = files.filter(isRuntimeOnly).length;
 
@@ -545,16 +545,15 @@ export function AuthFileManagementPage() {
                     <span>{formatDate(file.modtime ?? file.updated_at ?? file.last_refresh)}</span>
                     {isRuntimeOnly(file) ? <span className="state-pill">{t('authFiles.runtime')}</span> : null}
                   </div>
+                  {quotaProviderForFile(file) && quotas[quotaKey(file)]?.status !== 'idle' ? <AuthFileQuotaSummary quota={quotas[quotaKey(file)] ?? idleQuota()} name={name} /> : null}
                   <div className="auth-file-actions">
                     {quotaProviderForFile(file) && !disabled ? <button type="button" className="secondary-button compact-button" onClick={() => void refreshQuota(file)} disabled={busy || quotas[quotaKey(file)]?.status === 'loading'}>{quotas[quotaKey(file)]?.status === 'loading' ? t('authFiles.quota.querying') : quotas[quotaKey(file)]?.status === 'success' ? t('authFiles.quota.refresh') : t('authFiles.quota.fetch')}</button> : null}
                     {providerKey(file) ? <button type="button" className="secondary-button compact-button" onClick={() => setModelViewName(name)} disabled={busy || disabled} title={t('authFiles.models.viewTitle')}>{t('authFiles.models.button')}</button> : null}
                     {providerKey(file) ? <button type="button" className="secondary-button compact-button" onClick={() => void openOauthModels(file)} disabled={busy || disabled || oauthModelSaving || isRuntimeOnly(file) || !readString(file, 'name')} title={t(isRuntimeOnly(file) ? 'authFiles.models.runtimeUnsupported' : 'authFiles.models.settings')}>{t('authFiles.models.excludeButton')}</button> : null}
                     <button type="button" className="secondary-button compact-button auth-file-priority-button" onClick={() => openPriorityEditor(file)} disabled={busy || disabled} title={t('authFiles.priority.hint')}><Pencil size={14} />{t('authFiles.priority.button', { priority })}</button>
-                    <button type="button" className="icon-button quiet" onClick={() => void copyName(name)} disabled={busy || disabled} title={t('authFiles.copyName')}>{copied === name ? <Check size={16} /> : <Copy size={16} />}</button>
                     <button type="button" className={`${disabled ? 'primary-button' : 'secondary-button'} compact-button`} onClick={() => void toggleStatus(file)} disabled={busy}>{disabled ? t('common.enable') : t('common.disable')}</button>
                     <button type="button" className="icon-button danger" onClick={() => void deleteFile(file)} disabled={busy || isRuntimeOnly(file)} title={t('common.delete')}><Trash2 size={16} /></button>
                   </div>
-                  {quotaProviderForFile(file) && quotas[quotaKey(file)]?.status !== 'idle' ? <AuthFileQuotaSummary quota={quotas[quotaKey(file)] ?? idleQuota()} name={name} /> : null}
                   <QuotaActionFeedback quota={quotas[quotaKey(file)] ?? idleQuota()} name={name} />
                 </article>
               );

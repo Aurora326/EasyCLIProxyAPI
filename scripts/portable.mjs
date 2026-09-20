@@ -93,11 +93,17 @@ await writeFile(join(output, 'portable-app.json'), `${JSON.stringify({
 
 const coreOutput = join(output, 'cpa-core');
 if (preserveRuntimeConfig) {
+  // cpa-core 既是内置压缩包的存放目录，也是应用运行时「已安装内核」的目录。
+  // 就地升级时必须保留已解压的内核文件（cli-proxy-api.exe、static 等），否则应用下次
+  // 启动会因为找不到内核二进制而自动安装内置的固定版本，把用户升级过的内核回退掉。
+  // 这里只清掉非当前版本的历史压缩包，config.yaml 与已解压内容原样保留。
   await mkdir(coreOutput, { recursive: true });
   const entries = await readdir(coreOutput, { withFileTypes: true });
   await Promise.all(entries
-    .filter((entry) => entry.name !== 'config.yaml')
-    .map((entry) => rm(join(coreOutput, entry.name), { recursive: true, force: true })));
+    .filter((entry) => entry.isFile()
+      && entry.name.startsWith('CLIProxyAPI_')
+      && entry.name !== assetName)
+    .map((entry) => rm(join(coreOutput, entry.name), { force: true })));
 } else {
   await rm(coreOutput, { recursive: true, force: true });
 }

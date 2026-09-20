@@ -12,3 +12,5 @@ agent_docs/
 *.log
 *.tmp
 misc/
+
+.claude/

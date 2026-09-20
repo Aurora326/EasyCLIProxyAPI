@@ -1,5 +1,6 @@
 import { useConfirmation } from '../components/ConfirmationDialog';
 import { ModelSelectionPanel } from '../components/ModelSelectionPanel';
+import { IdeIntegrationHub } from '../components/IdeIntegrationHub';
 import {
   type CSSProperties,
   FormEvent,
@@ -28,6 +29,7 @@ import {
 } from '@dnd-kit/sortable';
 import { CSS as DndCss } from '@dnd-kit/utilities';
 import {
+  Activity,
   Edit3,
   Filter,
   GripVertical,
@@ -810,6 +812,7 @@ export function ApiAccessPage() {
   const [records, setRecords] = useState(emptyRecords);
   const [activeCategory, setActiveCategory] = useState<ProviderCategory>('codex-api-key');
   const [filter, setFilter] = useState('');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'disabled'>('all');
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -908,6 +911,11 @@ export function ApiAccessPage() {
         }))
         .filter((row) => providerCategoryMatchesRecord(activeCategory, row.record, activeSection))
         .filter((row) => {
+          if (statusFilter === 'active') return !row.disabled;
+          if (statusFilter === 'disabled') return row.disabled;
+          return true;
+        })
+        .filter((row) => {
           const query = filter.trim().toLowerCase();
           if (!query) return true;
           return [row.remark || row.name, row.apiKey, row.baseUrl, row.models.map((model) => model.name).join(' ')]
@@ -915,7 +923,7 @@ export function ApiAccessPage() {
             .toLowerCase()
             .includes(query);
         }),
-    [activeCategory, activeSection, apiAccessRemarks, filter, records, t],
+    [activeCategory, activeSection, apiAccessRemarks, filter, records, statusFilter, t],
   );
 
   const openCreate = () => {
@@ -1216,6 +1224,8 @@ export function ApiAccessPage() {
         </div>
       </header>
 
+      <IdeIntegrationHub />
+
       {error ? <MessageNotice message={error} onDismiss={() => setError('')} /> : null}
       <div className="provider-workbench real-provider-workbench">
         <aside className="panel provider-category-panel">
@@ -1243,9 +1253,37 @@ export function ApiAccessPage() {
               <h2 title={t(activeDefinition.labelKey)}>{t(activeDefinition.labelKey)}</h2>
               <span>{t('apiAccess.matches', { count: rows.length })}</span>
             </div>
-            <div className="management-toolbar compact-toolbar">
-              <Search size={16} aria-hidden="true" />
-              <input value={filter} onChange={(event) => setFilter(event.currentTarget.value)} placeholder={t('apiAccess.search')} />
+            <div className="management-toolbar compact-toolbar" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 1 }}>
+                <Search size={16} aria-hidden="true" />
+                <input value={filter} onChange={(event) => setFilter(event.currentTarget.value)} placeholder={t('apiAccess.search')} />
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                <button
+                  type="button"
+                  className={`snippet-lang-pill ${statusFilter === 'all' ? 'active' : ''}`}
+                  onClick={() => setStatusFilter('all')}
+                  style={{ cursor: 'pointer', padding: '3px 8px', fontSize: 11, borderRadius: 4 }}
+                >
+                  {t('apiAccess.filter.all')}
+                </button>
+                <button
+                  type="button"
+                  className={`snippet-lang-pill ${statusFilter === 'active' ? 'active' : ''}`}
+                  onClick={() => setStatusFilter('active')}
+                  style={{ cursor: 'pointer', padding: '3px 8px', fontSize: 11, borderRadius: 4 }}
+                >
+                  {t('apiAccess.filter.active')}
+                </button>
+                <button
+                  type="button"
+                  className={`snippet-lang-pill ${statusFilter === 'disabled' ? 'active' : ''}`}
+                  onClick={() => setStatusFilter('disabled')}
+                  style={{ cursor: 'pointer', padding: '3px 8px', fontSize: 11, borderRadius: 4 }}
+                >
+                  {t('apiAccess.filter.disabled')}
+                </button>
+              </div>
             </div>
           </div>
 
@@ -1289,7 +1327,33 @@ export function ApiAccessPage() {
                         : maskSecret(row.apiKey)}
                     </code>
                     <span className="provider-row-url" title={row.baseUrl || undefined}>{row.baseUrl || t('apiAccess.defaultUrl')}</span>
-                    {row.models.length > 0 ? <span className="provider-row-models">{t('apiAccess.models.summary', { count: row.models.length })}</span> : null}
+                    {row.models.length > 0 ? (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginTop: 4 }}>
+                        <span style={{ fontSize: 11, color: 'var(--clean-text-muted)' }}>
+                          {t('apiAccess.models.count', { count: row.models.length })}:
+                        </span>
+                        {row.models.slice(0, 3).map((m) => (
+                          <span
+                            key={m.name}
+                            className="cmd-kbd-badge"
+                            style={{
+                              fontSize: 11,
+                              color: 'var(--clean-primary)',
+                              background: 'var(--clean-primary-soft)',
+                              borderColor: 'var(--clean-primary-border)',
+                            }}
+                            title={m.name}
+                          >
+                            {m.name}
+                          </span>
+                        ))}
+                        {row.models.length > 3 ? (
+                          <span className="cmd-kbd-badge" style={{ fontSize: 10, color: 'var(--clean-text-muted)' }}>
+                            +{row.models.length - 3}
+                          </span>
+                        ) : null}
+                      </div>
+                    ) : null}
                   </div>
                   {row.priority === null ? null : (
                     <div className="provider-row-meta">
@@ -1300,10 +1364,12 @@ export function ApiAccessPage() {
                     <button
                       type="button"
                       className="secondary-button provider-health-button"
+                      style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
                       onClick={() => setHealthDialogRow(row)}
                       disabled={busy}
                     >
-                      {t('apiAccess.health.action')}
+                      <Activity size={14} aria-hidden="true" />
+                      <span>{t('apiAccess.health.action')}</span>
                     </button>
                     <label className="provider-enabled-control" title={row.disabled ? t('apiAccess.enable') : t('apiAccess.disable')}>
                       <span>{row.disabled ? t('apiAccess.status.disabled') : t('apiAccess.status.enabled')}</span>

@@ -574,7 +574,11 @@ pub(crate) fn build_claude_agent_config(
         .unwrap_or_else(|| ClaudeDesktopModelMappings::all(model));
     let max_context_tokens = mappings.max_context_tokens;
     let model_settings = claude_code_model_settings(&mappings);
-    let subagent_model = model_settings.haiku.clone();
+    let subagent_model = if model_settings.haiku.trim().is_empty() {
+        model_settings.sonnet.clone()
+    } else {
+        model_settings.haiku.clone()
+    };
     let effort_level = claude_code_model_effort_level(models, &mappings.sonnet)?;
     let env = ensure_json_object_entry(root, "env");
     env.remove("ANTHROPIC_API_KEY");
@@ -588,7 +592,11 @@ pub(crate) fn build_claude_agent_config(
         ("ANTHROPIC_MODEL", model_settings.sonnet.as_str()),
         (
             "ANTHROPIC_DEFAULT_HAIKU_MODEL",
-            model_settings.haiku.as_str(),
+            if model_settings.haiku.trim().is_empty() {
+                model_settings.sonnet.as_str()
+            } else {
+                model_settings.haiku.as_str()
+            },
         ),
         (
             "ANTHROPIC_DEFAULT_SONNET_MODEL",
@@ -597,7 +605,7 @@ pub(crate) fn build_claude_agent_config(
         ("ANTHROPIC_DEFAULT_OPUS_MODEL", model_settings.opus.as_str()),
         (
             "ANTHROPIC_DEFAULT_FABLE_MODEL",
-            model_settings.sonnet.as_str(),
+            model_settings.effective_fable(),
         ),
         ("CLAUDE_CODE_SUBAGENT_MODEL", subagent_model.as_str()),
     ] {
@@ -782,6 +790,12 @@ pub(crate) fn build_claude_desktop_profile(
         .unwrap_or_else(|| ClaudeDesktopModelMappings::all(model));
     let inference_models = vec![
         claude_desktop_inference_model(
+            CLAUDE_DESKTOP_FABLE_MODEL_ID,
+            mappings.effective_fable(),
+            mappings.effective_fable_1m(),
+            models,
+        ),
+        claude_desktop_inference_model(
             CLAUDE_DESKTOP_OPUS_MODEL_ID,
             &mappings.opus,
             mappings.opus_1m,
@@ -791,12 +805,6 @@ pub(crate) fn build_claude_desktop_profile(
             CLAUDE_DESKTOP_SONNET_MODEL_ID,
             &mappings.sonnet,
             mappings.sonnet_1m,
-            models,
-        ),
-        claude_desktop_inference_model(
-            CLAUDE_DESKTOP_HAIKU_MODEL_ID,
-            &mappings.haiku,
-            mappings.haiku_1m,
             models,
         ),
     ];

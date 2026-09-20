@@ -19,6 +19,7 @@ import {
   loadQuota,
   providerForFile,
   quotaKey,
+  quotaTone,
   type AuthFile,
   type QuotaProvider,
   type QuotaState,
@@ -221,7 +222,7 @@ export function QuotaCard({ file, quota, onRefresh, onReset }: { file: AuthFile;
       {quota.status === 'success' && provider === 'devin' && quota.subscriptionActiveUntil ? <div className="quota-reset-credit-summary"><span>{t('quota.subscriptionExpiry', { time: formatQuotaTimestamp(quota.subscriptionActiveUntil, locale) })}</span></div> : null}
       {quota.status === 'success' ? <div className="quota-row-list">{quota.rows.map((row, index) => {
         const reset = formatQuotaReset(row.resetAtMs, row.reset, locale, now);
-        return <div className="real-quota-row" key={`${row.label}-${index}`}>
+        return <div className="real-quota-row" data-tone={quotaTone(row.remainingPercent)} key={`${row.label}-${index}`}>
           <div><span>{row.label}</span><strong>{row.remainingPercent === null ? '—' : t('quota.remaining', { percent: Math.round(row.remainingPercent) })}</strong></div>
           {row.remainingPercent !== null ? <div className="real-quota-track"><span style={{ width: `${Math.max(0, Math.min(100, row.remainingPercent))}%` }} /></div> : null}
           <small>{[row.detail, reset].filter(Boolean).join(' · ')}</small>

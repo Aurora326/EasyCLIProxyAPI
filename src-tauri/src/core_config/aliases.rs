@@ -343,10 +343,11 @@ pub(crate) fn ensure_claude_desktop_model_aliases_with_oauth_definitions_in_yaml
         .ok_or_else(|| "内核配置顶层必须是 YAML 映射".to_string())?;
 
     let sources = root.clone();
+    remove_managed_claude_model_alias(root, CLAUDE_DESKTOP_HAIKU_MODEL_ID)?;
     for (alias, source_model) in [
+        (CLAUDE_DESKTOP_FABLE_MODEL_ID, mappings.effective_fable()),
         (CLAUDE_DESKTOP_OPUS_MODEL_ID, mappings.opus.as_str()),
         (CLAUDE_DESKTOP_SONNET_MODEL_ID, mappings.sonnet.as_str()),
-        (CLAUDE_DESKTOP_HAIKU_MODEL_ID, mappings.haiku.as_str()),
     ] {
         let direct_alias = models
             .iter()
@@ -378,6 +379,7 @@ pub(crate) fn remove_managed_claude_model_aliases_in_yaml(content: &str) -> Resu
         .ok_or_else(|| "内核配置顶层必须是 YAML 映射".to_string())?;
     let mut changed = false;
     for alias in [
+        CLAUDE_DESKTOP_FABLE_MODEL_ID,
         CLAUDE_DESKTOP_OPUS_MODEL_ID,
         CLAUDE_DESKTOP_SONNET_MODEL_ID,
         CLAUDE_DESKTOP_HAIKU_MODEL_ID,
@@ -500,7 +502,9 @@ pub(crate) fn remove_oauth_claude_model_alias(
 }
 
 pub(crate) fn managed_claude_alias_display_name(alias: &str) -> Option<&'static str> {
-    if alias.eq_ignore_ascii_case(CLAUDE_DESKTOP_OPUS_MODEL_ID) {
+    if alias.eq_ignore_ascii_case(CLAUDE_DESKTOP_FABLE_MODEL_ID) {
+        Some(MANAGED_CLAUDE_FABLE_ALIAS_DISPLAY_NAME)
+    } else if alias.eq_ignore_ascii_case(CLAUDE_DESKTOP_OPUS_MODEL_ID) {
         Some(MANAGED_CLAUDE_OPUS_ALIAS_DISPLAY_NAME)
     } else if alias.eq_ignore_ascii_case(CLAUDE_DESKTOP_SONNET_MODEL_ID) {
         Some(MANAGED_CLAUDE_SONNET_ALIAS_DISPLAY_NAME)

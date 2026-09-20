@@ -1,25 +1,27 @@
 import { MessageNotice } from './appNotice';
 import { useEffect, useRef, useState } from 'react';
-import { invoke } from '@tauri-apps/api/core';
+import { invoke, isTauri } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import {
   Bot,
   Check,
-  ChevronUp,
   ExternalLink,
   History,
   House,
-  Languages,
   Lock,
   LogIn,
   MessageCircle,
   Network,
   PackageOpen,
+  Search,
   ServerCog,
   Settings,
   X,
+  Zap,
 } from 'lucide-react';
 import appLogo from './assets/logo.jpg';
+import { CommandPalette } from './components/CommandPalette';
+import { PlaygroundPage } from './pages/PlaygroundPage';
 import { CoreRuntimeProvider, useCoreRuntime } from './coreRuntime';
 import { CoreUpdateProvider, useCoreUpdate } from './coreUpdate';
 import { ConfigPanelPage } from './pages/ConfigPanel';
@@ -30,11 +32,12 @@ import { OAuthManagementPage } from './pages/ManagementPages';
 import { AgentsPage } from './pages/AgentsPage';
 import { EasyModePage } from './pages/EasyModePage';
 import { UsageRecordsPage } from './pages/UsageRecordsPage';
-import { languageOptions, useI18n } from './i18n';
+import { useI18n } from './i18n';
 import { AppUpdateDialog, AppUpdateProvider, useAppUpdate } from './appUpdate';
 import { appUpdateIndicatorState } from './appUpdateModel';
 import { canOpenAppPage, isAlwaysAvailablePage } from './navigation';
 import { useThemePreference } from './theme';
+import { useQuotaAutoRefresh } from './services/quotaAutoRefresh';
 
 const CONTACT_URL = 'https://qm.qq.com/q/3queDaIG';
 
@@ -56,6 +59,12 @@ const pages = [
     labelKey: 'app.nav.api',
     icon: Network,
     component: ApiAccessPage,
+  },
+  {
+    id: 'playground',
+    labelKey: 'app.nav.playground',
+    icon: Zap,
+    component: PlaygroundPage,
   },
   {
     id: 'oauth',
@@ -128,18 +137,65 @@ function AppContent() {
   const { info: appUpdateInfo, hasUpdate, processing: appUpdateProcessing } = useAppUpdate();
   const { latest: coreLatest, hasUpdate: coreHasUpdate } = useCoreUpdate();
   const [active, setActive] = useState<PageId>('home');
-  const [languageMenuOpen, setLanguageMenuOpen] = useState(false);
   const [theme, setTheme] = useThemePreference();
+  const [cmdPaletteOpen, setCmdPaletteOpen] = useState(false);
   const [windowsClosePrompt, setWindowsClosePrompt] = useState<WindowsClosePrompt | null>(null);
   const closeDialogRef = useRef<HTMLElement>(null);
-  const languageMenuRef = useRef<HTMLDivElement>(null);
-  const languageButtonRef = useRef<HTMLButtonElement>(null);
-  const { status } = useCoreRuntime();
+  const { status, refreshStatus } = useCoreRuntime();
   const coreRunning = Boolean(status?.running);
+  useQuotaAutoRefresh(coreRunning);
+
+  // 全局快捷键监听：Ctrl+K 打开命令面板，Ctrl+1~7 快速切页
+  useEffect(() => {
+    const handleKeyDown = (event: globalThis.KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
+        event.preventDefault();
+        setCmdPaletteOpen((prev) => !prev);
+        return;
+      }
+      if ((event.ctrlKey || event.metaKey) && !event.shiftKey && !event.altKey) {
+        const num = Number.parseInt(event.key, 10);
+        if (num >= 1 && num <= 7) {
+          const navPages = pages.filter((p) => p.id !== 'easy');
+          const targetPage = navPages[num - 1];
+          if (targetPage && canOpenAppPage(targetPage.id, coreRunning)) {
+            event.preventDefault();
+            setActive(targetPage.id);
+          }
+        }
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [coreRunning]);
+
+  const handleRunCoreCommand = async (cmd: 'start_core_process' | 'stop_core_process' | 'restart_core_process') => {
+    try {
+      if (isTauri()) {
+        await invoke(cmd);
+      }
+      await refreshStatus();
+    } catch (e) {
+      console.error('执行内核命令失败', e);
+    }
+  };
+
+  const handleCopyApiUrl = async (type: 'openai' | 'claude' | 'gemini') => {
+    let port = 8317;
+    try {
+      if (isTauri()) {
+        const settings = await invoke<{ port: number }>('get_gui_settings');
+        if (settings.port) port = settings.port;
+      }
+    } catch {}
+    let url = `http://127.0.0.1:${port}`;
+    if (type === 'openai') url += '/v1';
+    try {
+      await navigator.clipboard.writeText(url);
+    } catch {}
+  };
   const activePage = pages.find((page) => page.id === active) ?? pages[0];
   const ActivePage = activePage.component;
-  const selectedLanguage = languageOptions.find((option) => option.value === locale)
-    ?? languageOptions[0];
   const availableUpdateLabel = [
     hasUpdate
       ? t('appUpdate.badgeAvailable', { version: appUpdateInfo?.latestVersion ?? '' })
@@ -153,26 +209,6 @@ function AppContent() {
       setActive('home');
     }
   }, [active, coreRunning]);
-
-  useEffect(() => {
-    if (!languageMenuOpen) return undefined;
-    const closeFromOutside = (event: PointerEvent) => {
-      if (!languageMenuRef.current?.contains(event.target as Node)) {
-        setLanguageMenuOpen(false);
-      }
-    };
-    const closeFromKeyboard = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape') return;
-      setLanguageMenuOpen(false);
-      languageButtonRef.current?.focus();
-    };
-    document.addEventListener('pointerdown', closeFromOutside);
-    document.addEventListener('keydown', closeFromKeyboard);
-    return () => {
-      document.removeEventListener('pointerdown', closeFromOutside);
-      document.removeEventListener('keydown', closeFromKeyboard);
-    };
-  }, [languageMenuOpen]);
 
   useEffect(() => {
     let disposed = false;
@@ -198,19 +234,21 @@ function AppContent() {
       );
     };
 
-    void listen('windows-close-requested', () => {
-      void handleWindowsCloseRequest();
-    })
-      .then((stop) => {
-        if (disposed) {
-          stop();
-        } else {
-          stopListening = stop;
-        }
+    if (isTauri()) {
+      void listen('windows-close-requested', () => {
+        void handleWindowsCloseRequest();
       })
-      .catch((error) => {
-        console.error('监听 Windows 关闭确认事件失败', error);
-      });
+        .then((stop) => {
+          if (disposed) {
+            stop();
+          } else {
+            stopListening = stop;
+          }
+        })
+        .catch((error) => {
+          console.error('监听 Windows 关闭确认事件失败', error);
+        });
+    }
 
     return () => {
       disposed = true;
@@ -238,6 +276,10 @@ function AppContent() {
 
   const openContact = async () => {
     try {
+      if (!isTauri()) {
+        window.open(CONTACT_URL, '_blank');
+        return;
+      }
       await invoke('open_external_url', { url: CONTACT_URL });
     } catch (error) {
       console.error('打开联系我们链接失败', error);
@@ -333,13 +375,6 @@ function AppContent() {
           </nav>
 
           <div className="sidebar-bottom">
-            <button
-              type="button"
-              className="sidebar-easy-entry"
-              onClick={() => select('easy')}
-            >
-              <span>{t('app.nav.easy')}</span>
-            </button>
             <div
               className="sidebar-theme-selector"
               role="group"
@@ -373,54 +408,6 @@ function AppContent() {
                 {t('app.theme.system')}
               </button>
             </div>
-            <div ref={languageMenuRef} className="sidebar-language">
-              <button
-                ref={languageButtonRef}
-                type="button"
-                className="sidebar-language-trigger"
-                aria-label={t('app.language')}
-                aria-haspopup="listbox"
-                aria-expanded={languageMenuOpen}
-                aria-controls="sidebar-language-list"
-                onClick={() => setLanguageMenuOpen((open) => !open)}
-              >
-                <Languages size={16} aria-hidden="true" />
-                <span lang={selectedLanguage.value}>{selectedLanguage.nativeLabel}</span>
-                <ChevronUp
-                  size={14}
-                  aria-hidden="true"
-                  className={languageMenuOpen ? 'expanded' : ''}
-                />
-              </button>
-              {languageMenuOpen ? (
-                <div
-                  id="sidebar-language-list"
-                  className="sidebar-language-list"
-                  role="listbox"
-                  aria-label={t('app.language')}
-                >
-                  {languageOptions.map((option) => {
-                    const selected = option.value === locale;
-                    return (
-                      <button
-                        key={option.value}
-                        type="button"
-                        className={selected ? 'selected' : ''}
-                        role="option"
-                        aria-selected={selected}
-                        onClick={() => {
-                          setLocale(option.value);
-                          setLanguageMenuOpen(false);
-                        }}
-                      >
-                        <span lang={option.value}>{option.nativeLabel}</span>
-                        {selected ? <Check size={14} aria-hidden="true" /> : null}
-                      </button>
-                    );
-                  })}
-                </div>
-              ) : null}
-            </div>
             <button
               type="button"
               className="sidebar-contact"
@@ -436,6 +423,30 @@ function AppContent() {
         ) : null}
 
         <div className="workspace">
+          {active !== 'easy' ? (
+            <header className="apple-toolbar">
+              <div className="apple-toolbar-title-group">
+                <span className="apple-toolbar-title">{t(activePage.labelKey)}</span>
+                <span className="apple-toolbar-badge">EasyCLIProxyAPI</span>
+              </div>
+              <div className="apple-toolbar-actions">
+                <button
+                  type="button"
+                  className="toolbar-cmd-trigger"
+                  onClick={() => setCmdPaletteOpen(true)}
+                  title={t('commandPalette.triggerTip')}
+                >
+                  <Search size={13} aria-hidden="true" />
+                  <span>{t('commandPalette.placeholder').split('(')[0].trim()}</span>
+                  <span className="cmd-kbd-badge">Ctrl+K</span>
+                </button>
+                <span className={`state-pill ${coreRunning ? 'success' : 'neutral'}`}>
+                  <span className={`status-beacon-dot ${coreRunning ? 'running' : 'stopped'}`} aria-hidden="true" />
+                  <span>{coreRunning ? t('kernel.status.running') : t('kernel.control.notRunning')}</span>
+                </span>
+              </div>
+            </header>
+          ) : null}
           <main className="content">
             {isAlwaysAvailablePage(activePage.id) || coreRunning ? (
               activePage.id === 'easy' ? (
@@ -536,6 +547,16 @@ function AppContent() {
       ) : null}
 
       <AppUpdateDialog />
+      <CommandPalette
+        isOpen={cmdPaletteOpen}
+        onClose={() => setCmdPaletteOpen(false)}
+        onNavigate={(pageId) => select(pageId as PageId)}
+        onRunCoreCommand={handleRunCoreCommand}
+        coreRunning={coreRunning}
+        onCopyApiUrl={handleCopyApiUrl}
+        currentTheme={theme}
+        onSetTheme={setTheme}
+      />
     </>
   );
 }

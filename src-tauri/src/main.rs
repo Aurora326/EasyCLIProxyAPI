@@ -18,6 +18,8 @@ mod provider_health;
 #[cfg(any(target_os = "macos", target_os = "windows"))]
 mod tray;
 mod usage;
+mod cloud_sync;
+use cloud_sync::*;
 
 #[cfg(test)]
 use configuration_watcher::nearest_existing_watch_directory;
@@ -163,9 +165,12 @@ const PI_AGENT_SETTINGS_FILE: &str = "settings.json";
 const CODEX_MODEL_CATALOG_FILE: &str = "cpa-gui-model-catalog.json";
 const CODEX_OAUTH_LOGIN_REQUIRED_ERROR: &str = "CODEX_OAUTH_LOGIN_REQUIRED";
 const CLAUDE_DESKTOP_PROFILE_ID: &str = "00000000-0000-4000-8000-000000831700";
+const CLAUDE_DESKTOP_FABLE_MODEL_ID: &str = "claude-fable-5-1";
 const CLAUDE_DESKTOP_OPUS_MODEL_ID: &str = "claude-opus-5";
-const CLAUDE_DESKTOP_SONNET_MODEL_ID: &str = "claude-sonnet-4-6";
+const CLAUDE_DESKTOP_SONNET_MODEL_ID: &str = "claude-sonnet-5";
 const CLAUDE_DESKTOP_HAIKU_MODEL_ID: &str = "claude-haiku-4-5";
+const MANAGED_CLAUDE_FABLE_ALIAS_DISPLAY_NAME: &str =
+    "EasyCLIProxyAPI managed Claude Fable mapping";
 const MANAGED_CLAUDE_OPUS_ALIAS_DISPLAY_NAME: &str = "EasyCLIProxyAPI managed Claude Opus mapping";
 const MANAGED_CLAUDE_SONNET_ALIAS_DISPLAY_NAME: &str =
     "EasyCLIProxyAPI managed Claude Sonnet mapping";
@@ -1127,9 +1132,14 @@ struct AgentModelOption {
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct ClaudeDesktopModelMappings {
+    #[serde(default)]
+    fable: String,
     opus: String,
     sonnet: String,
+    #[serde(default)]
     haiku: String,
+    #[serde(default)]
+    fable_1m: bool,
     #[serde(default)]
     opus_1m: bool,
     #[serde(default)]
@@ -1153,11 +1163,27 @@ fn default_claude_auto_compact_pct() -> u8 {
 }
 
 impl ClaudeDesktopModelMappings {
+    fn effective_fable(&self) -> &str {
+        if !self.fable.trim().is_empty() {
+            self.fable.as_str()
+        } else if !self.haiku.trim().is_empty() {
+            self.haiku.as_str()
+        } else {
+            self.sonnet.as_str()
+        }
+    }
+
+    fn effective_fable_1m(&self) -> bool {
+        self.fable_1m || (self.fable.trim().is_empty() && self.haiku_1m)
+    }
+
     fn all(model: &str) -> Self {
         Self {
+            fable: model.to_string(),
             opus: model.to_string(),
             sonnet: model.to_string(),
             haiku: model.to_string(),
+            fable_1m: false,
             opus_1m: false,
             sonnet_1m: false,
             haiku_1m: false,
@@ -2609,7 +2635,13 @@ fn main() {
             codex_sessions::delete_codex_sessions,
             codex_sessions::repair_codex_session_metadata,
             codex_sessions::preview_codex_session_index_cleanup,
-            codex_sessions::apply_codex_session_index_cleanup
+            codex_sessions::apply_codex_session_index_cleanup,
+            test_r2_sync_connection,
+            push_config_to_r2,
+            pull_config_from_r2,
+            get_r2_sync_settings,
+            save_r2_sync_settings_cmd,
+            get_r2_cloud_status
         ])
         .build(tauri::generate_context!())
         .expect("failed to build app");

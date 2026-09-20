@@ -1,6 +1,6 @@
 import { MessageNotice } from '../appNotice';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { invoke } from '@tauri-apps/api/core';
+import { invoke, isTauri } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import {
   ArrowLeft,
@@ -125,12 +125,14 @@ export function CodexSessionsPanel() {
   useEffect(() => {
     let disposed = false;
     let stop: (() => void) | undefined;
-    void listen<CodexSessionRepairProgress>('codex-session-repair-progress', (event) => {
-      if (!disposed) setRepairProgress(event.payload);
-    }).then((unlisten) => {
-      if (disposed) unlisten();
-      else stop = unlisten;
-    }).catch(() => undefined);
+    if (isTauri()) {
+      void listen<CodexSessionRepairProgress>('codex-session-repair-progress', (event) => {
+        if (!disposed) setRepairProgress(event.payload);
+      }).then((unlisten) => {
+        if (disposed) unlisten();
+        else stop = unlisten;
+      }).catch(() => undefined);
+    }
     return () => {
       disposed = true;
       stop?.();

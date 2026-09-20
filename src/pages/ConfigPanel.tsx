@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useRef, useState } from 'react';
-import { invoke } from '@tauri-apps/api/core';
+import { invoke, isTauri } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { open } from '@tauri-apps/plugin-dialog';
 import {
@@ -35,6 +35,12 @@ import { useI18n } from '../i18n';
 import { MessageNotice, FloatingNotice, useAppNotice } from '../appNotice';
 import { webUiManagementUrl } from '../services/clientAccess';
 import { ThinkingAliasesPage } from './ThinkingAliasesPage';
+import { CloudSyncPanel } from '../components/CloudSyncPanel';
+import {
+  QUOTA_AUTO_REFRESH_OPTIONS,
+  readQuotaAutoRefreshInterval,
+  writeQuotaAutoRefreshInterval,
+} from '../services/quotaAutoRefresh';
 
 type CoreConfigSettings = {
   apiKeys: CoreApiKey[];
@@ -77,7 +83,7 @@ type ConfigAction =
   | 'tls'
   | 'software'
   | null;
-type ConfigSubpage = 'general' | 'network' | 'routing' | 'software' | 'aliases';
+type ConfigSubpage = 'general' | 'network' | 'routing' | 'software' | 'aliases' | 'cloud-sync';
 type CloseBehavior = 'ask' | 'exit' | 'minimize-to-tray';
 type NetworkDraftField =
   | 'port'
@@ -144,6 +150,15 @@ export function ConfigPanelPage() {
   const [softwareSilentStartDraft, setSoftwareSilentStartDraft] = useState(false);
   const [softwareDefaultTerminalDraft, setSoftwareDefaultTerminalDraft] = useState('auto');
   const [softwareSavedStatusVisible, setSoftwareSavedStatusVisible] = useState(false);
+  const [quotaAutoRefreshMinutes, setQuotaAutoRefreshMinutesState] = useState(readQuotaAutoRefreshInterval);
+  const [quotaAutoRefreshSaved, setQuotaAutoRefreshSaved] = useState(false);
+
+  const handleQuotaAutoRefreshChange = (minutes: number) => {
+    setQuotaAutoRefreshMinutesState(minutes);
+    writeQuotaAutoRefreshInterval(minutes);
+    setQuotaAutoRefreshSaved(true);
+    window.setTimeout(() => setQuotaAutoRefreshSaved(false), 2000);
+  };
   const [tlsSettings, setTlsSettings] = useState<CoreTlsSettings | null>(null);
   const [tlsSettingsLoading, setTlsSettingsLoading] = useState(true);
   const [tlsEnabledDraft, setTlsEnabledDraft] = useState(false);
@@ -210,16 +225,18 @@ export function ConfigPanelPage() {
     void loadSettings();
     void loadSoftwareSettings();
     void loadTlsSettings();
-    void listen('config-files-changed', () => {
-      if (!disposed) {
-        void loadSettings('preserve');
-        void loadSoftwareSettings();
-        void loadTlsSettings();
-      }
-    }).then((unlisten) => {
-      if (disposed) unlisten();
-      else stop = unlisten;
-    });
+    if (isTauri()) {
+      void listen('config-files-changed', () => {
+        if (!disposed) {
+          void loadSettings('preserve');
+          void loadSoftwareSettings();
+          void loadTlsSettings();
+        }
+      }).then((unlisten) => {
+        if (disposed) unlisten();
+        else stop = unlisten;
+      });
+    }
     return () => {
       disposed = true;
       stop?.();
@@ -297,6 +314,32 @@ export function ConfigPanelPage() {
   async function loadSettings(mode: DraftRefreshMode = 'replace') {
     setLoading(true);
     setLoadError('');
+    if (!isTauri()) {
+      applySettings({
+        apiKeys: [{ apiKey: 'leezhi', remark: '默认鉴权密钥' }],
+        debug: false,
+        commercialMode: false,
+        loggingToFile: false,
+        logsMaxTotalSizeMb: 100,
+        errorLogsMaxFiles: 10,
+        usageStatisticsEnabled: true,
+        redisUsageQueueRetentionSeconds: 86400,
+        host: '127.0.0.1',
+        port: 8317,
+        allowLan: false,
+        routingStrategy: 'round-robin',
+        proxyUrl: '',
+        routingSessionAffinity: false,
+        routingSessionAffinityTtl: '10m',
+        disableCooling: false,
+        requestRetry: 3,
+        maxRetryCredentials: 0,
+        maxRetryInterval: 30,
+        streamingBootstrapRetries: 0,
+      }, mode);
+      setLoading(false);
+      return;
+    }
     try {
       const result = await invoke<CoreConfigSettings>('get_core_config_settings');
       applySettings(result, mode);
@@ -311,6 +354,24 @@ export function ConfigPanelPage() {
   async function loadSoftwareSettings() {
     setSoftwareSettingsLoading(true);
     setSoftwareSavedStatusVisible(false);
+    if (!isTauri()) {
+      const fallbackSoftware: SoftwareSettings = {
+        closeBehavior: 'ask',
+        autostartEnabled: false,
+        startCoreOnLaunch: true,
+        silentStartEnabled: false,
+        defaultTerminal: 'system',
+        availableTerminals: [],
+      };
+      setSoftwareSettings(fallbackSoftware);
+      setSoftwareCloseBehaviorDraft(fallbackSoftware.closeBehavior);
+      setSoftwareAutostartDraft(fallbackSoftware.autostartEnabled);
+      setSoftwareStartCoreDraft(fallbackSoftware.startCoreOnLaunch);
+      setSoftwareSilentStartDraft(fallbackSoftware.silentStartEnabled);
+      setSoftwareDefaultTerminalDraft(fallbackSoftware.defaultTerminal);
+      setSoftwareSettingsLoading(false);
+      return;
+    }
     try {
       const result = await invoke<SoftwareSettings>('get_software_settings');
       setSoftwareSettings(result);
@@ -329,6 +390,15 @@ export function ConfigPanelPage() {
 
   async function loadTlsSettings() {
     setTlsSettingsLoading(true);
+    if (!isTauri()) {
+      setTlsSettings({ enabled: false, cert: '', key: '' });
+      setTlsEnabledDraft(false);
+      setTlsCertDraft('');
+      setTlsKeyDraft('');
+      setTlsError('');
+      setTlsSettingsLoading(false);
+      return;
+    }
     try {
       const result = await invoke<CoreTlsSettings>('get_core_tls_settings');
       setTlsSettings(result);
@@ -1006,6 +1076,18 @@ export function ConfigPanelPage() {
           onClick={() => setActiveSubpage('software')}
         >
           {t('config.tabs.software')}
+        </button>
+        <button
+          type="button"
+          id="config-subpage-tab-cloud-sync"
+          role="tab"
+          className={activeSubpage === 'cloud-sync' ? 'active' : ''}
+          aria-selected={activeSubpage === 'cloud-sync'}
+          aria-controls="config-subpage-panel-cloud-sync"
+          tabIndex={activeSubpage === 'cloud-sync' ? 0 : -1}
+          onClick={() => setActiveSubpage('cloud-sync')}
+        >
+          {t('config.tabs.cloudSync')}
         </button>
       </div>
 
@@ -2074,10 +2156,46 @@ export function ConfigPanelPage() {
                     </select>
                   </label>
                 </div>
+                <div className="config-software-setting-row config-software-close-row">
+                  <div className="config-software-setting-copy">
+                    <span className="config-software-setting-icon" aria-hidden="true">
+                      <RefreshCw size={18} />
+                    </span>
+                    <div>
+                      <strong>{t('config.software.quotaAutoRefresh')}</strong>
+                      <small>{t('config.software.quotaAutoRefreshDescription')}</small>
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    {quotaAutoRefreshSaved ? (
+                      <span className="state-pill success" style={{ fontSize: '11px' }}>
+                        {t('config.network.saved')}
+                      </span>
+                    ) : null}
+                    <label className="config-software-select">
+                      <span className="sr-only">{t('config.software.quotaAutoRefresh')}</span>
+                      <select
+                        className="config-network-input"
+                        value={quotaAutoRefreshMinutes}
+                        onChange={(event) => {
+                          handleQuotaAutoRefreshChange(Number(event.currentTarget.value));
+                        }}
+                      >
+                        {QUOTA_AUTO_REFRESH_OPTIONS.map((option) => (
+                          <option value={option.value} key={option.value}>
+                            {t(option.labelKey)}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
+                </div>
               </div>
             </div>
           </section>
         </div>
+      ) : activeSubpage === 'cloud-sync' ? (
+        <CloudSyncPanel />
       ) : (
         <div
           className="config-subpage-panel"

@@ -3102,7 +3102,9 @@ pub(crate) fn inspect_claude_code_model_mappings(
     let Some((haiku, haiku_had_1m)) = read_model("ANTHROPIC_DEFAULT_HAIKU_MODEL") else {
         return Ok(None);
     };
-    let legacy_1m = opus_had_1m || sonnet_had_1m || haiku_had_1m;
+    let (fable, fable_had_1m) = read_model("ANTHROPIC_DEFAULT_FABLE_MODEL")
+        .unwrap_or_else(|| (sonnet.clone(), sonnet_had_1m));
+    let legacy_1m = opus_had_1m || sonnet_had_1m || haiku_had_1m || fable_had_1m;
     let max_context_tokens = env
         .get(CLAUDE_CODE_MAX_CONTEXT_TOKENS_ENV)
         .and_then(serde_json::Value::as_str)
@@ -3124,9 +3126,11 @@ pub(crate) fn inspect_claude_code_model_mappings(
         .and_then(serde_json::Value::as_str)
         .is_some_and(|value| value == "1" || value.eq_ignore_ascii_case("true"));
     Ok(Some(ClaudeDesktopModelMappings {
+        fable,
         opus,
         sonnet,
         haiku,
+        fable_1m: fable_had_1m,
         opus_1m: opus_had_1m,
         sonnet_1m: sonnet_had_1m,
         haiku_1m: haiku_had_1m,
@@ -3249,9 +3253,11 @@ pub(crate) fn claude_code_model_settings(
     mappings: &ClaudeDesktopModelMappings,
 ) -> ClaudeDesktopModelMappings {
     ClaudeDesktopModelMappings {
+        fable: claude_code_model_setting(mappings.effective_fable(), mappings.effective_fable_1m()),
         opus: claude_code_model_setting(&mappings.opus, mappings.opus_1m),
         sonnet: claude_code_model_setting(&mappings.sonnet, mappings.sonnet_1m),
         haiku: claude_code_model_setting(&mappings.haiku, mappings.haiku_1m),
+        fable_1m: mappings.effective_fable_1m(),
         opus_1m: mappings.opus_1m,
         sonnet_1m: mappings.sonnet_1m,
         haiku_1m: mappings.haiku_1m,
@@ -3309,17 +3315,22 @@ pub(crate) fn claude_code_model_presentation_environment(
         Some(mappings.max_context_tokens),
         Some("Sonnet mapping"),
     );
+    let haiku_model = if mappings.haiku.trim().is_empty() {
+        mappings.sonnet.as_str()
+    } else {
+        mappings.haiku.as_str()
+    };
     let haiku = claude_code_model_presentation(
         models,
-        &mappings.haiku,
+        haiku_model,
         mappings.haiku_1m,
         Some(mappings.max_context_tokens),
         Some("Haiku mapping"),
     );
     let fable = claude_code_model_presentation(
         models,
-        &mappings.sonnet,
-        mappings.sonnet_1m,
+        mappings.effective_fable(),
+        mappings.effective_fable_1m(),
         Some(mappings.max_context_tokens),
         Some("Fable mapping"),
     );

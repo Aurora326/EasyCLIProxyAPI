@@ -1,6 +1,6 @@
 import { useConfirmation } from '../components/ConfirmationDialog';
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react';
-import { invoke } from '@tauri-apps/api/core';
+import { invoke, isTauri } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import {
   Activity,
@@ -331,6 +331,10 @@ export function UsageRecordsPage() {
 
   const executeLoadData = useCallback(
     async (quiet = false) => {
+      if (!isTauri()) {
+        setLoading(false);
+        return;
+      }
       const requestId = ++requestIdRef.current;
       const { timeQuery, query } = buildQueries();
       if (!quiet) setLoading(true);
@@ -423,12 +427,14 @@ export function UsageRecordsPage() {
     const refresh = () => {
       if (!disposed && !document.hidden) void loadData(true, true);
     };
-    listen('usage-records-updated', refresh)
-      .then((stop) => {
-        if (disposed) stop();
-        else unlisten = stop;
-      })
-      .catch(() => {});
+    if (isTauri()) {
+      listen('usage-records-updated', refresh)
+        .then((stop) => {
+          if (disposed) stop();
+          else unlisten = stop;
+        })
+        .catch(() => {});
+    }
     const timer = window.setInterval(refresh, 5_000);
     const refreshWhenVisible = () => {
       if (!document.hidden) refresh();
@@ -547,6 +553,75 @@ export function UsageRecordsPage() {
       </div>
 
       <section className="panel usage-filter-panel">
+        <div className="usage-quick-pills-bar">
+          <span className="usage-quick-pills-label">
+            <Activity size={13} style={{ color: 'var(--clean-primary, #06b6d4)' }} />
+            {t('usage.filter.quickPresets')}
+          </span>
+          <div className="usage-quick-pills-group">
+            <button
+              type="button"
+              className={`usage-quick-pill ${range === 'today' ? 'active' : ''}`}
+              onClick={() => {
+                setRange('today');
+                setPage(1);
+              }}
+            >
+              {t('usage.range.today')}
+            </button>
+            <button
+              type="button"
+              className={`usage-quick-pill ${range === '24h' ? 'active' : ''}`}
+              onClick={() => {
+                setRange('24h');
+                setPage(1);
+              }}
+            >
+              {t('usage.range.24h')}
+            </button>
+            <button
+              type="button"
+              className={`usage-quick-pill ${range === '7d' ? 'active' : ''}`}
+              onClick={() => {
+                setRange('7d');
+                setPage(1);
+              }}
+            >
+              {t('usage.range.7d')}
+            </button>
+            <button
+              type="button"
+              className={`usage-quick-pill ${range === '30d' ? 'active' : ''}`}
+              onClick={() => {
+                setRange('30d');
+                setPage(1);
+              }}
+            >
+              {t('usage.range.30d')}
+            </button>
+            <button
+              type="button"
+              className={`usage-quick-pill ${range === 'all' ? 'active' : ''}`}
+              onClick={() => {
+                setRange('all');
+                setPage(1);
+              }}
+            >
+              {t('usage.range.all')}
+            </button>
+            <button
+              type="button"
+              className={`usage-quick-pill pill-danger ${result === 'failed' ? 'active' : ''}`}
+              onClick={() => {
+                changeFilter(setResult, result === 'failed' ? 'all' : 'failed');
+              }}
+            >
+              <TriangleAlert size={12} />
+              {t('usage.filter.onlyFailed')}
+            </button>
+          </div>
+        </div>
+
         <div className="usage-filter-row">
           <div className="usage-filter-group">
             <label className="usage-filter-item">

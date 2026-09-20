@@ -961,10 +961,20 @@ pub(crate) fn resolve_claude_desktop_model_mappings(
     let requested = requested.ok_or("请重新选择 Claude Desktop 的模型映射")?;
     let resolve =
         |model: &str| resolve_available_agent_model(models, &validate_agent_model(model)?);
+    let resolved_fable = resolve(requested.effective_fable())?;
+    let resolved_opus = resolve(&requested.opus)?;
+    let resolved_sonnet = resolve(&requested.sonnet)?;
+    let resolved_haiku = if requested.haiku.trim().is_empty() {
+        resolved_fable.clone()
+    } else {
+        resolve(&requested.haiku)?
+    };
     Ok(Some(ClaudeDesktopModelMappings {
-        opus: resolve(&requested.opus)?,
-        sonnet: resolve(&requested.sonnet)?,
-        haiku: resolve(&requested.haiku)?,
+        fable: resolved_fable,
+        opus: resolved_opus,
+        sonnet: resolved_sonnet,
+        haiku: resolved_haiku,
+        fable_1m: requested.effective_fable_1m(),
         opus_1m: requested.opus_1m,
         sonnet_1m: requested.sonnet_1m,
         haiku_1m: requested.haiku_1m,
@@ -990,17 +1000,27 @@ pub(crate) fn resolve_claude_code_model_mappings(
     if !(1..=100).contains(&requested.auto_compact_pct) {
         return Err("Claude Code 触发压缩百分比必须介于 1 和 100 之间".to_string());
     }
-    let max_context_tokens = if requested.opus_1m || requested.sonnet_1m || requested.haiku_1m {
+    let max_context_tokens = if requested.effective_fable_1m() || requested.opus_1m || requested.sonnet_1m || requested.haiku_1m {
         CLAUDE_DESKTOP_EXTENDED_CONTEXT_WINDOW
     } else {
         requested.max_context_tokens
     };
     let resolve =
         |model: &str| resolve_available_agent_model(models, &validate_agent_model(model)?);
+    let resolved_fable = resolve(requested.effective_fable())?;
+    let resolved_opus = resolve(&requested.opus)?;
+    let resolved_sonnet = resolve(&requested.sonnet)?;
+    let resolved_haiku = if requested.haiku.trim().is_empty() {
+        resolved_fable.clone()
+    } else {
+        resolve(&requested.haiku)?
+    };
     Ok(Some(ClaudeDesktopModelMappings {
-        opus: resolve(&requested.opus)?,
-        sonnet: resolve(&requested.sonnet)?,
-        haiku: resolve(&requested.haiku)?,
+        fable: resolved_fable,
+        opus: resolved_opus,
+        sonnet: resolved_sonnet,
+        haiku: resolved_haiku,
+        fable_1m: requested.effective_fable_1m(),
         opus_1m: requested.opus_1m,
         sonnet_1m: requested.sonnet_1m,
         haiku_1m: requested.haiku_1m,

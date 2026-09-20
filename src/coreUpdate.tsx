@@ -8,7 +8,7 @@ import {
   useState,
   type ReactNode,
 } from 'react';
-import { invoke } from '@tauri-apps/api/core';
+import { invoke, isTauri } from '@tauri-apps/api/core';
 import { useCoreRuntime } from './coreRuntime';
 
 export type CoreLatest = {
@@ -98,6 +98,10 @@ export function coreUpdateAvailable(
 }
 
 export function requestLatestCore(force = false) {
+  if (!isTauri()) {
+    return Promise.resolve({ version: 'v7.3.4', assetName: 'cli-proxy-api-windows-amd64.zip' });
+  }
+
   if (!force && latestCheckPromise) {
     return latestCheckPromise;
   }

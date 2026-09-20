@@ -9,7 +9,7 @@ import {
   type ComponentType,
   type KeyboardEvent,
 } from 'react';
-import { invoke } from '@tauri-apps/api/core';
+import { invoke, isTauri } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { open } from '@tauri-apps/plugin-dialog';
 import {
@@ -19,11 +19,14 @@ import {
   Check,
   ChevronDown,
   LoaderCircle,
+  PanelLeftClose,
+  PanelLeftOpen,
   RefreshCw,
   Search,
   SlidersHorizontal,
   Trash2,
   X,
+  Zap,
 } from 'lucide-react';
 import claudeIcon from '../assets/icons/claude.svg';
 import codexIcon from '../assets/icons/codex.svg';
@@ -142,12 +145,14 @@ type PiProviderUpdateStatus = {
 type OAuthLoginRequiredAction = 'enable' | 'apply' | 'launch';
 
 type ClaudeModelMappings = {
+  fable: string;
   opus: string;
   sonnet: string;
-  haiku: string;
+  haiku?: string;
+  fable1m: boolean;
   opus1m: boolean;
   sonnet1m: boolean;
-  haiku1m: boolean;
+  haiku1m?: boolean;
   maxContextTokens: number;
   autoCompactPct: number;
   disableAutoCompact: boolean;
@@ -172,9 +177,11 @@ const DEFAULT_CLAUDE_CODE_MAX_CONTEXT_TOKENS = 200_000;
 const DEFAULT_CLAUDE_AUTO_COMPACT_PCT = 90;
 
 const createClaudeModelMappings = (model: string): ClaudeModelMappings => ({
+  fable: model,
   opus: model,
   sonnet: model,
   haiku: model,
+  fable1m: false,
   opus1m: false,
   sonnet1m: false,
   haiku1m: false,
@@ -204,6 +211,11 @@ let agentFormEditBaselineCache: Partial<Record<AgentClientId, AgentFormValues>> 
 
 const claudeMappingRoles = [
   {
+    key: 'fable',
+    contextKey: 'fable1m',
+    labelKey: 'agents.claudeDesktopMapping.fable',
+  },
+  {
     key: 'opus',
     contextKey: 'opus1m',
     labelKey: 'agents.claudeDesktopMapping.opus',
@@ -212,11 +224,6 @@ const claudeMappingRoles = [
     key: 'sonnet',
     contextKey: 'sonnet1m',
     labelKey: 'agents.claudeDesktopMapping.sonnet',
-  },
-  {
-    key: 'haiku',
-    contextKey: 'haiku1m',
-    labelKey: 'agents.claudeDesktopMapping.haiku',
   },
 ] as const;
 
@@ -413,6 +420,29 @@ const writeAgentLaunchDirectoryHistory = (history: AgentLaunchDirectoryHistory) 
   if (typeof window === 'undefined') return;
   try {
     window.localStorage.setItem(AGENT_LAUNCH_DIRECTORY_HISTORY_KEY, JSON.stringify(history));
+  } catch {
+  }
+};
+
+const AGENT_LIST_INSTALLED_ONLY_KEY = 'cpa-gui.agent-list-installed-only.v1';
+const AGENT_LIST_COLLAPSED_KEY = 'cpa-gui.agent-list-collapsed.v1';
+
+const readStoredBoolean = (key: string, fallback: boolean): boolean => {
+  if (typeof window === 'undefined') return fallback;
+  try {
+    const saved = window.localStorage.getItem(key);
+    if (saved === '1') return true;
+    if (saved === '0') return false;
+    return fallback;
+  } catch {
+    return fallback;
+  }
+};
+
+const writeStoredBoolean = (key: string, value: boolean) => {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(key, value ? '1' : '0');
   } catch {
   }
 };
@@ -695,6 +725,8 @@ export function AgentsPage({ embedded = false, onConfigurationApplied }: AgentsP
   const { t } = useI18n();
   const [selected, setSelected] = useState<AgentClientId>(readSelectedAgentClient);
   const [viewStateByClient, setViewStateByClient] = useState(() => agentViewStateCache);
+  const [installedOnly, setInstalledOnly] = useState(() => readStoredBoolean(AGENT_LIST_INSTALLED_ONLY_KEY, true));
+  const [clientListCollapsed, setClientListCollapsed] = useState(() => readStoredBoolean(AGENT_LIST_COLLAPSED_KEY, false));
   const viewMode = embedded ? 'embedded' : 'full';
   const viewState = viewStateByClient[viewMode][selected] ?? DEFAULT_AGENT_VIEW_STATE;
   const activeSubpage = viewState.subpage === 'sessions' && (embedded || selected !== 'codex')
@@ -871,20 +903,38 @@ export function AgentsPage({ embedded = false, onConfigurationApplied }: AgentsP
     void loadModels(selected, preferredModel);
   }, [loadModels, loading, selected]);
 
+  // 当开启「只显示已安装」且检测结果返回后，如果当前选中的客户端未安装，
+  // 自动切到第一个已安装的客户端，避免未安装项留在列表中。
+  useEffect(() => {
+    if (!installedOnly || statuses.length === 0) return;
+    const isSelectedInstalled = statuses.find((status) => status.id === selected)?.installed;
+    if (isSelectedInstalled) return;
+    const firstInstalled = agentDefinitions.find((agent) =>
+      statuses.find((status) => status.id === agent.id)?.installed,
+    );
+    if (firstInstalled) {
+      setSelected(firstInstalled.id);
+      writeSelectedAgentClient(firstInstalled.id);
+    }
+  }, [installedOnly, selected, statuses]);
+
   useEffect(() => {
     let disposed = false;
     let stop: (() => void) | null = null;
-    void listen('config-files-changed', () => {
-      if (disposed) return;
-      setDetectionError('');
-      void loadStatuses().catch((requestError) => {
-        if (!disposed) setDetectionError(String(requestError));
+    if (isTauri()) {
+      void listen('config-files-changed', () => {
+        if (!disposed) {
+          setDetectionError('');
+          void loadStatuses().catch((requestError) => {
+            if (!disposed) setDetectionError(String(requestError));
+          });
+          void loadModels(selected);
+        }
+      }).then((unlisten) => {
+        if (disposed) unlisten();
+        else stop = unlisten;
       });
-      void loadModels(selected);
-    }).then((unlisten) => {
-      if (disposed) unlisten();
-      else stop = unlisten;
-    });
+    }
     return () => {
       disposed = true;
       stop?.();
@@ -1007,12 +1057,14 @@ export function AgentsPage({ embedded = false, onConfigurationApplied }: AgentsP
         dirty,
       );
       const next: ClaudeModelMappings = {
+        fable: findAgentModel(models, source.fable ?? source.haiku)?.name ?? (selected === 'claude-desktop' ? '' : selectedModel),
         opus: findAgentModel(models, source.opus)?.name ?? (selected === 'claude-desktop' ? '' : selectedModel),
         sonnet: findAgentModel(models, source.sonnet)?.name ?? (selected === 'claude-desktop' ? '' : selectedModel),
-        haiku: findAgentModel(models, source.haiku)?.name ?? (selected === 'claude-desktop' ? '' : selectedModel),
+        haiku: findAgentModel(models, source.haiku ?? source.fable)?.name ?? (selected === 'claude-desktop' ? '' : selectedModel),
+        fable1m: Boolean(source.fable1m ?? source.haiku1m),
         opus1m: Boolean(source.opus1m),
         sonnet1m: Boolean(source.sonnet1m),
-        haiku1m: Boolean(source.haiku1m),
+        haiku1m: Boolean(source.haiku1m ?? source.fable1m),
         maxContextTokens: source.maxContextTokens ?? DEFAULT_CLAUDE_CODE_MAX_CONTEXT_TOKENS,
         autoCompactPct: source.autoCompactPct ?? DEFAULT_CLAUDE_AUTO_COMPACT_PCT,
         disableAutoCompact: Boolean(source.disableAutoCompact),
@@ -1170,6 +1222,7 @@ export function AgentsPage({ embedded = false, onConfigurationApplied }: AgentsP
     if (isClaudeModelMappingClient) {
       editClaudeModelMappings((current) => ({
         ...current,
+        fable: model.name,
         opus: model.name,
         sonnet: model.name,
         haiku: model.name,
@@ -1179,7 +1232,7 @@ export function AgentsPage({ embedded = false, onConfigurationApplied }: AgentsP
   };
 
   const selectClaudeModelMapping = (
-    role: 'opus' | 'sonnet' | 'haiku',
+    role: 'fable' | 'opus' | 'sonnet' | 'haiku',
     value: string,
   ) => {
     const model = findAgentModel(models, value);
@@ -1189,14 +1242,14 @@ export function AgentsPage({ embedded = false, onConfigurationApplied }: AgentsP
   };
 
   const changeClaude1mPreference = (
-    preference: 'opus1m' | 'sonnet1m' | 'haiku1m',
+    preference: 'fable1m' | 'opus1m' | 'sonnet1m' | 'haiku1m',
     enabled: boolean,
   ) => {
     if (!isClaudeModelMappingClient) return;
     editClaudeModelMappings((current) => {
       const next = { ...current, [preference]: enabled };
       if (selected === 'claude-code') {
-        const any1mEnabled = next.opus1m || next.sonnet1m || next.haiku1m;
+        const any1mEnabled = next.fable1m || next.opus1m || next.sonnet1m || Boolean(next.haiku1m);
         next.maxContextTokens = any1mEnabled
           ? 1_000_000
           : DEFAULT_CLAUDE_CODE_MAX_CONTEXT_TOKENS;
@@ -1224,9 +1277,10 @@ export function AgentsPage({ embedded = false, onConfigurationApplied }: AgentsP
     setModelSelectionError('');
     editClaudeModelMappings((current) => ({
       ...current,
+      fable: resolveAgentModelForAliasMode(models, current.fable, enabled),
       opus: resolveAgentModelForAliasMode(models, current.opus, enabled),
       sonnet: resolveAgentModelForAliasMode(models, current.sonnet, enabled),
-      haiku: resolveAgentModelForAliasMode(models, current.haiku, enabled),
+      haiku: resolveAgentModelForAliasMode(models, current.haiku ?? current.fable, enabled),
     }));
   };
 
@@ -1754,6 +1808,15 @@ export function AgentsPage({ embedded = false, onConfigurationApplied }: AgentsP
     description={modificationDescription} />;
   const configurationErrorMessage = configurationError || (!nativeOauth ? modelSelectionError || modelError : '');
 
+  // 检测结果还没回来时先不过滤，否则侧栏会先空一下再突然冒出内容。
+  // 选中项始终保留：它可能没装，但右侧面板正显示它的配置，列表里不该凭空消失。
+  const detectionReady = statuses.length > 0;
+  const visibleAgents = installedOnly && detectionReady
+    ? agentDefinitions.filter((agent) => agent.id === selected
+      || statuses.find((item) => item.id === agent.id)?.installed)
+    : agentDefinitions;
+  const hiddenAgentCount = agentDefinitions.length - visibleAgents.length;
+
   return (
     <section className={`page management-page agents-page${embedded ? ' agents-page-embedded' : ''}`}>
       <header className="management-header">
@@ -1773,6 +1836,13 @@ export function AgentsPage({ embedded = false, onConfigurationApplied }: AgentsP
           {detectionError ? (
             <MessageNotice message={detectionError} onDismiss={() => setDetectionError('')} />
           ) : null}
+          {clientListCollapsed ? (
+            <button type="button" className="secondary-button compact-button" title={t('agents.list.expand')}
+              onClick={() => { setClientListCollapsed(false); writeStoredBoolean(AGENT_LIST_COLLAPSED_KEY, false); }}>
+              <PanelLeftOpen size={16} aria-hidden="true" />
+              {t('agents.list.expand')}
+            </button>
+          ) : null}
           <button type="button" className="secondary-button compact-button" onClick={() => void refresh()} disabled={loading || busy}>
             <RefreshCw size={16} className={loading ? 'spin' : ''} />
             {t('agents.redetect')}
@@ -1780,14 +1850,30 @@ export function AgentsPage({ embedded = false, onConfigurationApplied }: AgentsP
         </div>
       </header>
 
-      <div className="agent-workbench">
+      <div className={`agent-workbench${clientListCollapsed ? ' client-list-collapsed' : ''}`}>
+        {clientListCollapsed ? null : (
         <aside className="panel agent-client-list">
           <div className="agent-list-heading">
             <Bot size={18} />
             <div><strong>{t('agents.localClients')}</strong><span>{t('agents.selectClient')}</span></div>
+            <button type="button" className="icon-button quiet agent-list-collapse" title={t('agents.list.collapse')}
+              aria-label={t('agents.list.collapse')}
+              onClick={() => { setClientListCollapsed(true); writeStoredBoolean(AGENT_LIST_COLLAPSED_KEY, true); }}>
+              <PanelLeftClose size={16} aria-hidden="true" />
+            </button>
           </div>
+          <label className="agent-list-filter">
+            <input type="checkbox" checked={installedOnly}
+              onChange={(event) => {
+                const next = event.currentTarget.checked;
+                setInstalledOnly(next);
+                writeStoredBoolean(AGENT_LIST_INSTALLED_ONLY_KEY, next);
+              }} />
+            <span>{t('agents.list.onlyInstalled')}</span>
+            {hiddenAgentCount > 0 ? <small>{t('agents.list.hiddenCount', { count: hiddenAgentCount })}</small> : null}
+          </label>
           <div className="agent-list-items">
-            {agentDefinitions.map((agent) => {
+            {visibleAgents.map((agent) => {
               const status = statuses.find((item) => item.id === agent.id);
               return (
                 <button
@@ -1807,6 +1893,7 @@ export function AgentsPage({ embedded = false, onConfigurationApplied }: AgentsP
             })}
           </div>
         </aside>
+        )}
 
         <section className="panel agent-config-panel">
           <div className="agent-subpage-tabs" role="tablist" aria-label={t('agents.tabs.label')}>
@@ -1897,6 +1984,54 @@ export function AgentsPage({ embedded = false, onConfigurationApplied }: AgentsP
               role="tabpanel"
               aria-labelledby="agent-subpage-tab-core"
             >
+              {/* ⚡ 场景化一键工作流配方 */}
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: 10,
+                  padding: '10px 14px',
+                  background: 'linear-gradient(135deg, #ffffff 0%, #f0fdfa 100%)',
+                  border: '1px solid rgba(6, 182, 212, 0.25)',
+                  borderRadius: 10,
+                  boxShadow: '0 2px 10px rgba(6, 182, 212, 0.06)',
+                  marginBottom: 14,
+                  flexWrap: 'wrap',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <Zap size={14} style={{ color: '#0891b2' }} />
+                  <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--clean-text-primary)' }}>
+                    {t('agents.recipe.title')}
+                  </span>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                  <button
+                    type="button"
+                    className="agent-preset-chip"
+                    onClick={() => {
+                      const found = models.find((m) => m.name.toLowerCase().includes('deepseek') || m.alias?.toLowerCase().includes('deepseek'));
+                      if (found) selectModel(found.name);
+                    }}
+                    title="一键装配 DeepSeek 极速流"
+                  >
+                    ⚡ {t('agents.recipe.claudeDeepseek')}
+                  </button>
+                  <button
+                    type="button"
+                    className="agent-preset-chip"
+                    onClick={() => {
+                      const found = models.find((m) => m.name.toLowerCase().includes('sonnet') || m.alias?.toLowerCase().includes('sonnet'));
+                      if (found) selectModel(found.name);
+                    }}
+                    title="一键装配 Claude 3.5 顶配编码流"
+                  >
+                    ⚡ {t('agents.recipe.cursorSonnet')}
+                  </button>
+                </div>
+              </div>
+
               <div className={`agent-status-grid ${hasIndependentCliAndApp ? 'dual-install-status-grid' : isPiClient ? 'pi-status-grid' : ''}`}>
                 <div>
                   <span><BadgeCheck size={14} />{t('agents.installStatus')}</span>
@@ -1951,6 +2086,37 @@ export function AgentsPage({ embedded = false, onConfigurationApplied }: AgentsP
                   <div className="agent-section-heading">
                     <div><strong>{t(isDeepSeekHarnessClient ? 'agents.harness.defaultModel' : 'agents.useModel')}</strong></div>
                   </div>
+
+                  {models.length > 0 ? (
+                    <div className="agent-presets-bar">
+                      <span className="agent-preset-title">
+                        <Zap size={13} style={{ color: 'var(--clean-primary)' }} aria-hidden="true" />
+                        <span>{t('agents.presets.title')}:</span>
+                      </span>
+                      {['deepseek', 'claude-3-5-sonnet', 'gpt-4o', 'kimi'].map((keyword) => {
+                        const matched = models.find(
+                          (m) =>
+                            m.name.toLowerCase().includes(keyword) ||
+                            (m.alias && m.alias.toLowerCase().includes(keyword)),
+                        );
+                        if (!matched) return null;
+                        const isCurrent = selectedModel === matched.name;
+                        return (
+                          <button
+                            key={keyword}
+                            type="button"
+                            className={`agent-preset-chip ${isCurrent ? 'active' : ''}`}
+                            style={isCurrent ? { background: 'var(--clean-primary)', color: '#ffffff', borderColor: 'var(--clean-primary)' } : undefined}
+                            onClick={() => selectModel(matched.name)}
+                            title={t('agents.presets.applied', { name: matched.name })}
+                          >
+                            {matched.name}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  ) : null}
+
                   <AgentModelPicker
                     models={models}
                     value={selectedModel}

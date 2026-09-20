@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
-import { invoke } from '@tauri-apps/api/core';
+import { invoke, isTauri } from '@tauri-apps/api/core';
 import { en, ja, zhCN, zhTW, type MessageKey, type MessageVariables } from './resources';
 
 export type AppLocale = 'zh-CN' | 'zh-TW' | 'ja' | 'en';
@@ -38,13 +38,7 @@ export function normalizeLocale(value: string | null | undefined): AppLocale {
 }
 
 function detectInitialLocale(): AppLocale {
-  if (typeof window === 'undefined') return 'zh-CN';
-  try {
-    const saved = window.localStorage.getItem(STORAGE_KEY);
-    if (saved) return normalizeLocale(saved);
-  } catch {
-  }
-  return normalizeLocale(window.navigator.languages?.[0] ?? window.navigator.language);
+  return 'zh-CN';
 }
 
 function interpolate(template: string, variables?: MessageVariables): string {
@@ -83,9 +77,11 @@ export function I18nProvider({ children }: { children: ReactNode }) {
       window.localStorage.setItem(STORAGE_KEY, locale);
     } catch {
     }
-    void invoke('set_app_locale', { locale }).catch((error) => {
-      console.warn('Failed to synchronize the app locale with the native shell', error);
-    });
+    if (isTauri()) {
+      void invoke('set_app_locale', { locale }).catch((error) => {
+        console.warn('Failed to synchronize the app locale with the native shell', error);
+      });
+    }
   }, [locale]);
 
   const t = useCallback(

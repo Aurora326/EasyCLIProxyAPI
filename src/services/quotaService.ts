@@ -27,6 +27,15 @@ export type QuotaRow = {
   resetAtMs?: number;
   detail?: string;
 };
+/** 剩余量的紧张程度，用于进度条与数字的语义着色。 */
+export type QuotaTone = 'good' | 'warn' | 'low' | 'none';
+
+export const quotaTone = (remainingPercent: number | null): QuotaTone => {
+  if (remainingPercent === null || !Number.isFinite(remainingPercent)) return 'none';
+  if (remainingPercent < 20) return 'low';
+  if (remainingPercent < 50) return 'warn';
+  return 'good';
+};
 export type QuotaState = {
   status: QuotaStatus;
   rows: QuotaRow[];
@@ -340,6 +349,22 @@ export const codexResetCreditDetailsFor = (
   };
 };
 
+/** Antigravity 只返回英文的组名/窗口名，这里映射成界面语言，未知值原样保留。 */
+const antigravityGroupLabel = (displayName: string): string => {
+  const key = displayName.trim().toLowerCase();
+  if (key === 'gemini models') return quotaText('quota.service.antigravity.group.gemini');
+  if (key === 'claude and gpt models') return quotaText('quota.service.antigravity.group.claudeGpt');
+  return displayName.trim();
+};
+
+const antigravityWindowLabel = (window: string, displayName: string): string => {
+  const key = window.trim().toLowerCase().replace(/[\s_-]/g, '');
+  if (key === '5h' || key === 'fivehour') return quotaText('quota.service.window.fiveHourQuota');
+  if (key === 'weekly' || key === 'week') return quotaText('quota.service.weekly');
+  // 内核将来新增窗口类型时，退回上游原文，避免两个分组看起来一模一样。
+  return displayName.trim();
+};
+
 export const quotaRowsFor = (provider: QuotaProvider, payload: unknown): QuotaRow[] => {
   if (provider === 'devin') return readDevinQuota(payload).windows.map((window) => ({
     label: quotaText(window.id === 'daily' ? 'quota.service.daily' : 'quota.service.weekly'),
@@ -548,24 +573,23 @@ export const quotaRowsFor = (provider: QuotaProvider, payload: unknown): QuotaRo
       return ['5h', 'five-hour', 'five_hour'].includes(window) ? 0 : ['weekly', 'week'].includes(window) ? 1 : 2;
     };
     const buckets = [...group.buckets].sort((a, b) => order(a) - order(b));
-    const groupLabel = readString(group, 'display_name', 'displayName')
+    const groupLabel = antigravityGroupLabel(readString(group, 'display_name', 'displayName'))
       || quotaText('quota.service.quota');
-    const groupDescription = readString(group, 'description');
     return buckets
       .map((bucket, index): QuotaRow | null => {
         if (!isRecord(bucket)) return null;
         const remaining = quotaFraction(bucket.remaining_fraction ?? bucket.remainingFraction);
         if (remaining === null) return null;
-        const bucketLabel = readString(bucket, 'display_name', 'displayName', 'window');
-        const label = bucketLabel && (buckets.length > 1 || bucketLabel !== groupLabel)
-          ? `${groupLabel} · ${bucketLabel}`
-          : groupLabel;
+        const bucketLabel = antigravityWindowLabel(
+          readString(bucket, 'window'),
+          readString(bucket, 'display_name', 'displayName'),
+        );
+        const label = [groupLabel, bucketLabel].filter(Boolean).join(' · ');
         return {
           label: label || quotaText('quota.service.quota.numbered', { index: index + 1 }),
           remainingPercent: remaining * 100,
           reset: absoluteResetLabel(bucket.reset_time ?? bucket.resetTime),
           resetAtMs: quotaResetFor(bucket, ['reset_time', 'resetTime']),
-          detail: readString(bucket, 'description') || groupDescription || undefined,
         };
       })
       .filter((row): row is QuotaRow => row !== null);

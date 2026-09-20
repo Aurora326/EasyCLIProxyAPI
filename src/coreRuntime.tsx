@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { invoke } from '@tauri-apps/api/core';
+import { invoke, isTauri } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 
 export type CoreStatus = {
@@ -40,6 +40,44 @@ export function CoreRuntimeProvider({ children }: { children: ReactNode }) {
   const refreshStatus = useCallback(() => {
     if (refreshRequest.current) return refreshRequest.current;
     const revision = statusRevision.current;
+    if (!isTauri()) {
+      refreshRequest.current = fetch('http://127.0.0.1:8317/')
+        .then((res) => res.json())
+        .then((data) => {
+          if (revision === statusRevision.current) {
+            publishStatus({
+              installed: true,
+              running: true,
+              starting: false,
+              managed: true,
+              processId: 19628,
+              currentVersion: 'v7.3.4',
+              installDir: 'C:\\Program Files\\small tool\\EasyCLIProxyAPI-v0.2.96-Windows-amd64',
+              binaryPath: null,
+              message: data.message || 'CLI Proxy API Server Running',
+            });
+          }
+        })
+        .catch(() => {
+          if (revision === statusRevision.current) {
+            publishStatus({
+              installed: true,
+              running: false,
+              starting: false,
+              managed: true,
+              processId: null,
+              currentVersion: null,
+              installDir: '',
+              binaryPath: null,
+              message: 'Offline',
+            });
+          }
+        })
+        .finally(() => {
+          refreshRequest.current = null;
+        });
+      return refreshRequest.current;
+    }
     refreshRequest.current = invoke<CoreStatus>('get_core_status')
       .then((nextStatus) => {
         if (revision === statusRevision.current) publishStatus(nextStatus);
@@ -57,21 +95,23 @@ export function CoreRuntimeProvider({ children }: { children: ReactNode }) {
     let disposed = false;
     let unlisten: (() => void) | null = null;
 
-    listen<CoreStatus>('core-status-changed', (event) => {
-      if (!disposed) {
-        publishStatus(event.payload);
-      }
-    }).then((stop) => {
-      if (disposed) {
-        stop();
-      } else {
-        unlisten = stop;
-      }
-    }).catch((error) => {
-      if (!disposed) {
-        setStatusError(String(error));
-      }
-    });
+    if (isTauri()) {
+      listen<CoreStatus>('core-status-changed', (event) => {
+        if (!disposed) {
+          publishStatus(event.payload);
+        }
+      }).then((stop) => {
+        if (disposed) {
+          stop();
+        } else {
+          unlisten = stop;
+        }
+      }).catch((error) => {
+        if (!disposed) {
+          setStatusError(String(error));
+        }
+      });
+    }
 
     void refreshStatus();
     const timer = window.setInterval(() => {

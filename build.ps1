@@ -50,16 +50,24 @@ if ($LASTEXITCODE -ne 0) {
 $PreviousBuildJobs = $env:CARGO_BUILD_JOBS
 $PreviousGitCodeGuiRepository = $env:GITCODE_GUI_REPOSITORY
 $PreviousGitCodeCoreRepository = $env:GITCODE_CORE_REPOSITORY
+$PreviousRustMinStack = $env:RUST_MIN_STACK
 try {
     $env:CARGO_BUILD_JOBS = [string]$BuildJobs
     $env:GITCODE_GUI_REPOSITORY = $GitCodeGuiRepository
     $env:GITCODE_CORE_REPOSITORY = $GitCodeCoreRepository
+    $env:RUST_MIN_STACK = '67108864'
     & bun tauri build --no-bundle
     if ($LASTEXITCODE -ne 0) {
         throw "Tauri build failed with exit code $LASTEXITCODE."
     }
 }
 finally {
+    if ($null -eq $PreviousRustMinStack) {
+        Remove-Item Env:RUST_MIN_STACK -ErrorAction SilentlyContinue
+    }
+    else {
+        $env:RUST_MIN_STACK = $PreviousRustMinStack
+    }
     if ($null -eq $PreviousBuildJobs) {
         Remove-Item Env:CARGO_BUILD_JOBS -ErrorAction SilentlyContinue
     }

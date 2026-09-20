@@ -9,7 +9,7 @@ import {
   useState,
   type ReactNode,
 } from 'react';
-import { invoke } from '@tauri-apps/api/core';
+import { invoke, isTauri } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { Download, RefreshCw } from 'lucide-react';
 import { getCurrentLocale, translate, useI18n } from './i18n';
@@ -85,6 +85,18 @@ export function AppUpdateProvider({ children }: { children: ReactNode }) {
   const startupCheckStarted = useRef(false);
 
   const check = useCallback(async () => {
+    if (!isTauri()) {
+      setInfo({
+        currentVersion: 'v0.2.96-anime',
+        latestVersion: 'v0.2.96-anime',
+        updateAvailable: false,
+        releaseUrl: '',
+        autoUpdateSupported: false,
+        downloadSizeBytes: null,
+        unsupportedReason: null,
+      });
+      return;
+    }
     setChecking(true);
     setError('');
     try {
@@ -109,6 +121,9 @@ export function AppUpdateProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
+    if (!isTauri()) {
+      return;
+    }
     let disposed = false;
     let stopListening: (() => void) | undefined;
 

@@ -10,13 +10,17 @@ edition = "2021"
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
+aes-gcm = "0.10"
 base64 = "0.22"
 chrono = { version = "0.4", features = ["serde"] }
 flate2 = "1"
 futures-util = "0.3"
 getrandom = "0.3"
+hex = "0.4"
+hmac = "0.12"
 json5 = "0.4"
 notify = "7"
+pbkdf2 = "0.12"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "socks", "stream"] }
 rusqlite = { version = "0.32.1", features = ["bundled"] }
 semver = "1"

@@ -116,9 +116,11 @@ fn claude_mapping_legacy_json_defaults_1m_preferences_off() {
 #[test]
 fn claude_code_role_mappings_drive_settings() {
     let mappings = ClaudeDesktopModelMappings {
+        fable: "gpt-fable".to_string(),
         opus: "gpt-opus".to_string(),
         sonnet: "gpt-sonnet".to_string(),
         haiku: "gpt-haiku".to_string(),
+        fable_1m: false,
         opus_1m: false,
         sonnet_1m: false,
         haiku_1m: false,
@@ -184,9 +186,11 @@ fn claude_code_role_mappings_drive_settings() {
 #[test]
 fn claude_code_runtime_settings_keep_per_role_1m_suffixes() {
     let mappings = ClaudeDesktopModelMappings {
+        fable: "custom-pro".to_string(),
         opus: "custom-pro".to_string(),
         sonnet: "custom-pro".to_string(),
         haiku: "custom-flash".to_string(),
+        fable_1m: true,
         opus_1m: true,
         sonnet_1m: true,
         haiku_1m: false,
@@ -559,9 +563,9 @@ fn claude_desktop_config_builds_gateway_profile_and_index() {
     assert_eq!(
         profile["inferenceModels"],
         serde_json::json!([
+            { "name": CLAUDE_DESKTOP_FABLE_MODEL_ID },
             { "name": CLAUDE_DESKTOP_OPUS_MODEL_ID },
-            { "name": CLAUDE_DESKTOP_SONNET_MODEL_ID },
-            { "name": CLAUDE_DESKTOP_HAIKU_MODEL_ID }
+            { "name": CLAUDE_DESKTOP_SONNET_MODEL_ID }
         ])
     );
     assert_eq!(meta["appliedId"], CLAUDE_DESKTOP_PROFILE_ID);
@@ -578,9 +582,11 @@ fn claude_desktop_config_builds_gateway_profile_and_index() {
 #[test]
 fn claude_desktop_profile_keeps_non_claude_models_internal() {
     let mappings = ClaudeDesktopModelMappings {
+        fable: "gpt-5.6-mini".to_string(),
         opus: "gpt-5.6-sol".to_string(),
         sonnet: "gpt-5.6".to_string(),
         haiku: "gpt-5.6-mini".to_string(),
+        fable_1m: true,
         opus_1m: true,
         sonnet_1m: false,
         haiku_1m: true,
@@ -606,7 +612,7 @@ fn claude_desktop_profile_keeps_non_claude_models_internal() {
         AgentModelOption {
             input_modalities: None,
             harness_metadata: None,
-            name: mappings.haiku.clone(),
+            name: mappings.fable.clone(),
             alias: None,
             is_alias: false,
             context_window: Some(1_000_000),
@@ -627,18 +633,18 @@ fn claude_desktop_profile_keeps_non_claude_models_internal() {
         profile["inferenceModels"],
         serde_json::json!([
             {
+                "name": CLAUDE_DESKTOP_FABLE_MODEL_ID,
+                "contextWindow": 1000000,
+                "supports1m": true,
+                "prefer1m": true
+            },
+            {
                 "name": CLAUDE_DESKTOP_OPUS_MODEL_ID,
                 "contextWindow": 1000000,
                 "supports1m": true,
                 "prefer1m": true
             },
-            { "name": CLAUDE_DESKTOP_SONNET_MODEL_ID, "contextWindow": 272000 },
-            {
-                "name": CLAUDE_DESKTOP_HAIKU_MODEL_ID,
-                "contextWindow": 1000000,
-                "supports1m": true,
-                "prefer1m": true
-            }
+            { "name": CLAUDE_DESKTOP_SONNET_MODEL_ID, "contextWindow": 272000 }
         ])
     );
     assert!(!profile.to_string().contains("gpt-"));
@@ -1747,9 +1753,11 @@ fn deepseek_harness_profile_version_comes_from_installed_profile() {
 fn claude_desktop_aliases_expose_role_routes_only() {
     let input = "openai-compatibility:\n  - name: CPA\n    base-url: https://example.com/v1\n    models:\n      - name: gpt-5.6-sol\n";
     let mappings = ClaudeDesktopModelMappings {
+        fable: "gpt-5.6-sol".to_string(),
         opus: "gpt-5.6-sol".to_string(),
         sonnet: "gpt-5.6-sol".to_string(),
         haiku: "gpt-5.6-sol".to_string(),
+        fable_1m: false,
         opus_1m: false,
         sonnet_1m: false,
         haiku_1m: false,
@@ -1770,33 +1778,33 @@ fn claude_desktop_aliases_expose_role_routes_only() {
     assert_eq!(models.len(), 4);
     assert_eq!(
         configured_model_identity(&models[1]).unwrap().1,
-        CLAUDE_DESKTOP_OPUS_MODEL_ID
+        CLAUDE_DESKTOP_FABLE_MODEL_ID
     );
     assert_eq!(
         configured_model_identity(&models[2]).unwrap().1,
-        CLAUDE_DESKTOP_SONNET_MODEL_ID
+        CLAUDE_DESKTOP_OPUS_MODEL_ID
     );
     assert_eq!(
         configured_model_identity(&models[3]).unwrap().1,
-        CLAUDE_DESKTOP_HAIKU_MODEL_ID
+        CLAUDE_DESKTOP_SONNET_MODEL_ID
     );
     assert_eq!(
         configured_model_identity(&models[1]).unwrap().2.as_deref(),
-        Some(MANAGED_CLAUDE_OPUS_ALIAS_DISPLAY_NAME)
+        Some(MANAGED_CLAUDE_FABLE_ALIAS_DISPLAY_NAME)
     );
     assert_eq!(
         configured_model_identity(&models[2]).unwrap().2.as_deref(),
-        Some(MANAGED_CLAUDE_SONNET_ALIAS_DISPLAY_NAME)
+        Some(MANAGED_CLAUDE_OPUS_ALIAS_DISPLAY_NAME)
     );
     assert_eq!(
         configured_model_identity(&models[3]).unwrap().2.as_deref(),
-        Some(MANAGED_CLAUDE_HAIKU_ALIAS_DISPLAY_NAME)
+        Some(MANAGED_CLAUDE_SONNET_ALIAS_DISPLAY_NAME)
     );
     assert!(!rendered.contains("models: [{"));
     assert!(rendered.contains("\n      - name: gpt-5.6-sol\n"));
-    assert!(rendered.contains("\n        alias: claude-opus-5\n"));
+    assert!(rendered.contains("\n        alias: claude-fable-5-1\n"));
     assert!(
-        rendered.contains("\n        display-name: EasyCLIProxyAPI managed Claude Opus mapping\n")
+        rendered.contains("\n        display-name: EasyCLIProxyAPI managed Claude Fable mapping\n")
     );
     assert_eq!(
         ensure_claude_desktop_model_aliases_in_yaml(&rendered, &mappings, &available_models,)
