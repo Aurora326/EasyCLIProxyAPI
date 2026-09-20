@@ -1,6 +1,6 @@
 <p align="center">
-  <a href="README.md">English</a> |
   <strong>简体中文</strong> |
+  <a href="README.en.md">English</a> |
   <a href="README.ja.md">日本語</a>
 </p>
 
@@ -11,18 +11,27 @@
 <h1 align="center">EasyCLIProxyAPI</h1>
 
 <p align="center">
-  CLIProxyAPI 的便携桌面控制台。<br>
-  我们的目标是实现 token free（free 在这里的意思是自由）。
+  面向全生态 AI 智能体的现代化图形桌面控制台与本地代理中心。<br>
+  为自由与高效而生，一站式释放大模型生产力。
 </p>
 
 ## 项目简介
 
-EasyCLIProxyAPI 是基于 [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI)
-构建的图形化桌面管理工具。它将内核生命周期管理、OAuth 授权、API Provider 聚合、协议转换、
-凭证管理、配额查询、使用记录、模型别名和智能体客户端配置集中到一个界面中。
+EasyCLIProxyAPI 是基于 [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI) 深度定制与增强的跨平台桌面客户端。它将内核生命周期管理、多账号 OAuth 授权、API Provider 聚合接入、跨协议动态转换、模型别名系统、智能体客户端生态配置与使用分析深度整合于一体。
 
-软件基于 Tauri、React 和 Rust 构建，并可携带匹配版本的 CLIProxyAPI 内核压缩包，
-让首次安装和离线安装更加方便。
+本版本加入了云端快照同步、全局命令面板、内置测试场、主流 IDE 一键集成、全链路测速与后台配额监控等专属定制功能，为开发者提供开箱即用的本地中继与大模型调度体验。
+
+## 专属定制特性
+
+- **全局命令面板（Command Palette）**：支持随时通过快捷键快速唤起。支持页面瞬间直达、一键启停/重启内核、快速复制各协议 API 地址以及即时切换深浅色主题。
+- **端到端加密云端同步（Cloud Sync）**：支持对接 Cloudflare R2 及 AWS S3 兼容对象存储。所有敏感配置与密钥均在客户端经由主密码执行高强度加密，安全实现多设备间一键备份、云端拉取与配置漫游。
+- **内置 AI 模型测试场（Playground）**：无需打开外部应用即可在桌面端直接测试已聚合的任何模型。实时计算首字延迟（TTFT）、生成速率（TPS）及总耗时，完整呈现深度思考与推理折叠块。
+- **一键 IDE 集成中心（IDE Integration Hub）**：为 Cursor、Cline / Roo Code、Continue、Aider / Terminal CLI 与 Cherry Studio 等主流开发工具提供一键生成与即插即用的配置模板及环境变量。
+- **全链路 Provider 测速（Ping & Latency Detection）**：支持对所有添加的上游 Provider 展开一键全链路健康探测与毫秒级延迟测量，自动标记延迟档位。
+- **智能体工作流推荐配方（Agent Recipes & Presets）**：内置针对 Claude Code、Cursor、OpenCode 的热门模型与参数组合推荐，支持快速隐藏未安装的客户端。
+- **后台配额静默自动刷新（Quota Auto Refresh）**：支持灵活配置定时间隔，后台自动同步检测各凭证剩余配额，免除频繁手动刷新的繁琐操作。
+- **现代科技质感界面（Tech Blue Pro）**：采用全新科技蓝与高对比度界面布局，搭载沉浸式能量反应堆核心运转指示环，视觉清晰且无多余光污染。
+- **开发者接入代码生成器**：首页内置 cURL、Python、Node.js 与 .env 完整调用范例，点击即可复制即用代码。
 
 ## 赞助商
 
@@ -30,30 +39,34 @@ EasyCLIProxyAPI 是基于 [CLIProxyAPI](https://github.com/router-for-me/CLIProx
 
 感谢 APIMart 对本项目的赞助！
 
-APIMart 是一个低成本的 AI 图像与视频生成 API 平台——GPT-Image-2 每张图片低至 0.006 美元，1 美元可生成 160 多张图片。一个异步 API 即可处理图像和视频：提交任务、获取任务 ID，再通过轮询或回调获取结果。无需担心超时，即可批量生成数万张图片；切换模型也无需修改代码。按量付费，无月费——[立即注册](https://go.apimart.ai/gh-easycliproxyapi)即可开始使用。
+APIMart 是一个低成本的 AI 图像与视频生成 API 平台，提供灵活便捷的异步任务接口与按量计费机制。详情可参阅 [APIMart 官方页面](https://go.apimart.ai/gh-easycliproxyapi)。
 
 ## 功能导览
 
-### 首页与本地 API 地址
+### 1. 核心看板与快捷控制
 
-![首页与本地 API 地址](docs/screenshots/zh-CN/1.png)
+- 启动、关闭、重启与平滑重载内核进程，实时显示反应堆状态环、进程 PID 与运行状态。
+- 一键复制本地 OpenAI、Claude 与 Gemini 兼容接口地址及管理密钥。
+- 首页集成常用开发语言接入代码片段与主流开发环境快速配置中心。
+- 全局快捷键（`Ctrl+K` 或 `Cmd+K`）调出命令面板，支持键盘流极速操作。
 
-首页集中展示本地代理服务的运行情况，并提供常用的本地 API 地址：
+### 2. AI 模型测试场 (Playground)
 
-- 启动、关闭、重启和刷新 CLIProxyAPI 内核状态。
-- 查看安装状态、运行状态、进程 PID、内核版本和软件版本。
-- 复制可直接使用的 OpenAI、Claude 和 Gemini 兼容 API 地址。
-- 查看本地连接状态。
+- 桌面端直接进行多轮对话测试与模型响应质量校验。
+- 完整支持系统提示词、温度值调节与实时流式输出。
+- 智能捕获并展示关键遥测指标，包含首字响应时间（TTFT）、Token 吐出速度（TPS）与流耗时。
+- 深度适配带有思维链的模型（如 DeepSeek-R1、Claude 思考模式），支持折叠与展开思考内容。
 
-内核安装、版本对比和离线安装功能位于 **版本管理** 页面；可在此切换 GitHub 官方源、GitCode 国内源或 GitHub 镜像代理，也可以添加自定义 HTTPS 镜像前缀。软件与内核更新会优先使用所选渠道，并在失败时自动回退。
+### 3. 多端加密同步 (Cloud Sync)
 
-每次启动软件时，软件和内核会各自在后台自动检查一次更新；之后每进入 **版本管理** 页面 5 次（第 5、10、15 次，以此类推）自动检查一次，也可随时通过各自的 **检查更新** 按钮手动检查。页面内部刷新不重复计数，重启软件后次数归零。修改下载源不会自动检查更新，重新进入页面也会保留已保存的下载源。检查不会自动下载或安装更新。
+- 配置 Cloudflare R2 / S3 存储桶与私有加密凭证。
+- 在本地完成 AES 端到端强加密打包，杜绝第三方窥探。
+- 可选择同步范围：包含或排除 API Key、智能体配置、模型别名及已授权 OAuth 文件。
+- 多台开发设备间一键上传快照并拉取还原。
 
-### OAuth 账号授权
+### 4. OAuth 账号授权管理
 
-![OAuth 账号授权](docs/screenshots/zh-CN/2.png)
-
-OAuth 页面集中管理支持的浏览器授权登录：
+集中管理主流厂商的浏览器授权与凭证自动维护：
 
 - Codex OAuth
 - Claude OAuth
@@ -61,94 +74,58 @@ OAuth 页面集中管理支持的浏览器授权登录：
 - Kimi OAuth
 - xAI OAuth
 
-EasyCLIProxyAPI 会自动打开浏览器授权页面；当浏览器无法自动跳转回来时，也支持手动完成回调流程。
+支持浏览器自动重定向捕获，同时提供完善的手动回调流程以应对特定网络隔离环境。
 
-### API 接入与 Provider 聚合
+### 5. API 接入与 Provider 聚合
 
-![API 接入与 Provider 聚合](docs/screenshots/zh-CN/3.png)
+- 统一聚合管理 Codex、OpenAI 兼容接口、DeepSeek、Claude、Gemini 等各类上游服务。
+- 一键全链路批量 Ping 测速，精准定位网络瓶颈。
+- 自动进行 OpenAI、Claude 与 Gemini 之间的请求与响应协议互转。
+- 灵活的模型别名映射（Alias Routing），使客户端只需调用标准名称即可自动路由到目标 Provider 与特定推理等级。
 
-API 接入页面按照协议或 Provider 管理上游 API 凭证和服务地址：
+### 6. 智能体客户端生态配置
 
-- Codex
-- OpenAI 兼容 Provider
-- DeepSeek
-- Claude
-- Gemini
+自动识别本机已安装的 AI 桌面软件及命令行工具，支持一键连接本地代理服务：
 
-你可以添加多个接入配置、搜索已有配置、刷新 Provider 状态并执行健康检测，
-然后通过统一的本地 CLIProxyAPI 地址调用它们。请求和响应可以在 OpenAI、Claude、Gemini
-及其他兼容协议之间转换。
+- Claude Code 与 Claude Desktop
+- Cursor 与 Windsurf
+- Codex、OpenCode 与 OpenClaw
+- Hermes Agent、ZCode、Kimi Code 与 Grok Build
+- Roo Code、Cline 与 Continue
 
-### 使用记录与 Token 统计
+支持同步模型列表、应用常用工作流配方、配置前自动备份原始设置以及随时一键恢复。
 
-![使用记录与 Token 统计](docs/screenshots/zh-CN/4.png)
+### 7. 使用监控与 Token 分析
 
-使用记录页面帮助你了解本地请求活动和 Token 消耗情况：
-
-- 查看请求总数、Token 总量、成功率、TPS、缓存命中率和预估成本。
-- 按时间、模型、Provider、来源、密钥和结果筛选数据。
-- 查看请求与 Token 趋势，以及输入、输出、思考和缓存用量构成。
-- 浏览请求明细、分析视图和价格统计。
-- 通过 CPA 实时订阅和本地持久化 inbox 采集记录，订阅不可用时自动降级到 HTTP。
-- 启动时一次性迁移旧版使用记录数据库，并在 `usage-records/backups` 下保留迁移前备份。
-
-### 智能体客户端配置
-
-![智能体客户端配置](docs/screenshots/zh-CN/5.png)
-
-智能体页面会检测本机已安装的桌面端和命令行客户端，并帮助它们连接本地代理。支持的客户端包括：
-
-- Claude Code
-- Claude Desktop
-- Codex
-- OpenCode
-- OpenClaw
-- Hermes Agent
-- Pi（通过 CLIProxyAPI provider 插件）
-- ZCode
-- Kimi Code
-- Grok Build
-
-对于受支持的客户端，软件可以同步可用模型目录、选择默认模型、在应用托管配置前备份原始配置，
-以及恢复之前的配置。
-
-## 其他功能
-
-- 管理内核配置、API Key、远程管理凭证和路由策略。
-- 创建客户端可见的模型别名，并映射到 Provider 模型和推理等级。
-- 上传、下载、检查和管理认证文件。
-- 查看 Provider 配额和账号可用状态。
-- 通过 macOS 菜单栏或 Windows 系统托盘保持软件在后台运行。
+- 实时跟踪请求总数、Token 消耗构成（输入、输出、思考链与上下文缓存命中）。
+- 精准记录请求吞吐速率（TPS）与预估费用成本。
+- 支持按时间范围、模型名称、Provider 渠道、调用来源与返回状态进行快速过滤。
 
 ## 快速开始
 
-1. 前往 [GitHub Releases](https://github.com/router-for-me/EasyCLIProxyAPI/releases/latest)
-   下载对应操作系统的发行包。
-2. 解压 Windows 或 Linux 压缩包，macOS 用户打开 DMG。
+1. 从 [Releases 页面](https://github.com/Aurora326/EasyCLIProxyAPI/releases) 下载适合当前操作系统的预编译安装包。
+2. 解压运行（Windows / Linux）或挂载 DMG 并拖入应用程序（macOS）。
 3. 启动 EasyCLIProxyAPI。
-4. 打开 **版本管理** 页面，安装内置版本或最新版本的 CLIProxyAPI 内核。
-5. 返回 **首页** 启动内核，然后复制所需的本地 API 地址，或配置 OAuth/API Provider。
+4. 进入 **版本管理** 安装最新版本的代理内核。
+5. 返回首页启动内核，即可直接开始使用本地 API，或在 **模型测试** 页面即刻发起对话。
 
-## 升级
+## 快捷键参考
 
-每个 Windows 版本都会同时发布完整 ZIP 和兼容旧客户端的 `update` ZIP。这样尚未及时迁移的旧客户端仍可使用应用内更新；新版客户端则使用完整包，同时更新内置 core。
+| 快捷键 | 功能 |
+| --- | --- |
+| `Ctrl + K` / `Cmd + K` | 打开 / 关闭全局命令面板 |
+| `Esc` | 退出浮层或关闭对话框 |
+| `Enter` | 命令面板确认选中项 / 测试场发送消息 |
+| `Shift + Enter` | 测试场换行输入 |
 
-当前 Windows、Linux 和 macOS 发行包都支持应用内自动升级。Linux 会替换便携版程序文件并保留运行数据；macOS 会整体替换已签名的应用包。各平台都会等待新版完成启动确认，启动失败时自动回滚。安装目录必须允许当前用户写入。
+## 运行环境与平台支持
 
-现有 Linux 和 macOS 安装需要先手动升级一次，安装带有跨平台自动更新标识的版本；成功启动该版本后，后续即可使用应用内自动升级。
+支持主流桌面系统架构：
 
-如果当前版本是 v0.2.5 或更早版本，请执行一次手动迁移：退出 EasyCLIProxyAPI，下载最新版对应架构的完整 Windows ZIP，将 ZIP 顶层目录内的内容复制到现有安装目录并覆盖同名文件。不要先删除现有安装目录；`config.toml`、`oauth` 和 `cpa-core/config.yaml` 等用户数据会被保留。启动新版后，后续版本即可继续使用应用内自动升级。
+- **Windows**: x86_64、aarch64
+- **macOS**: Apple Silicon (M 系列)、Intel
+- **Linux**: x86_64、aarch64
 
-## 支持的平台
+## 开源协议
 
-GitHub Actions 会构建以下发行包：
-
-| 操作系统 | 架构 | 格式 |
-| --- | --- | --- |
-| Windows | amd64、aarch64 | ZIP |
-| macOS | amd64、aarch64 | DMG |
-| Linux | amd64、aarch64 | TAR.GZ |
-
-## 相关项目
-
-- [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI) — 本软件负责管理的代理内核。
+本项目遵循 [MIT License](LICENSE) 开源协议。
