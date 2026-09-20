@@ -118,6 +118,3 @@ EasyCLIProxyAPI 是基于 [CLIProxyAPI](https://github.com/router-for-me/CLIProx
 - **macOS**: Apple Silicon (M 系列)、Intel
 - **Linux**: x86_64、aarch64
 
-## 开源协议
-
-本项目遵循 [MIT License](LICENSE) 开源协议。
