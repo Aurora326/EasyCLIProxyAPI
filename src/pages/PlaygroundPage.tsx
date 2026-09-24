@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import {
   Send,
@@ -14,9 +14,11 @@ import {
   ChevronUp,
   Sliders,
   AlertCircle,
+  RefreshCw,
 } from 'lucide-react';
 import { useI18n } from '../i18n';
 import { useCoreRuntime } from '../coreRuntime';
+import { managementApi, responseList, readString } from '../services/managementApi';
 
 interface ChatMessage {
   id: string;
@@ -28,11 +30,24 @@ interface ChatMessage {
   totalTimeMs?: number;
 }
 
+const fallbackDefaultModels = [
+  'claude-3-5-sonnet',
+  'claude-3-7-sonnet',
+  'deepseek-chat',
+  'deepseek-reasoner',
+  'gpt-4o',
+  'gpt-4o-mini',
+  'gemini-2.5-pro',
+  'gemini-2.5-flash',
+];
+
 export function PlaygroundPage() {
   const { t } = useI18n();
   const { status: coreStatus } = useCoreRuntime();
 
   const [model, setModel] = useState('claude-3-5-sonnet');
+  const [availableModels, setAvailableModels] = useState<string[]>([]);
+  const [isLoadingModels, setIsLoadingModels] = useState(false);
   const [temperature, setTemperature] = useState(0.7);
   const [systemPrompt, setSystemPrompt] = useState('');
   const [inputPrompt, setInputPrompt] = useState('');
@@ -40,6 +55,10 @@ export function PlaygroundPage() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [expandedReasoning, setExpandedReasoning] = useState<Record<string, boolean>>({});
+
+  // 鉴权配置与端口
+  const [port, setPort] = useState(8317);
+  const [apiKey, setApiKey] = useState('');
 
   // 遥测数据
   const [lastTtft, setLastTtft] = useState<number | null>(null);
@@ -49,28 +68,123 @@ export function PlaygroundPage() {
   const abortControllerRef = useRef<AbortController | null>(null);
   const chatBottomRef = useRef<HTMLDivElement | null>(null);
 
-  const [port, setPort] = useState(8317);
-
-  useEffect(() => {
-    invoke<any>('get_core_config_settings')
-      .then((cfg) => {
-        if (cfg?.port) setPort(cfg.port);
-      })
-      .catch(() => {});
-  }, []);
-
   const isOnline = Boolean(coreStatus?.running);
 
-  const commonModels = [
-    'claude-3-5-sonnet',
-    'claude-3-7-sonnet',
-    'deepseek-chat',
-    'deepseek-reasoner',
-    'gpt-4o',
-    'gpt-4o-mini',
-    'gemini-2.5-pro',
-    'gemini-2.5-flash',
-  ];
+  // 动态加载内核已挂载模型与已配置模型
+  const loadModels = useCallback(async (targetPort = port, targetKey = apiKey) => {
+    setIsLoadingModels(true);
+    const discovered = new Set<string>();
+
+    // 1. 优先尝试从核心 /v1/models 获取实际可用模型列表
+    try {
+      const headers: Record<string, string> = {};
+      const keyToSend = targetKey.trim() || 'any-proxy-key';
+      if (keyToSend) {
+        headers['Authorization'] = `Bearer ${keyToSend}`;
+      }
+      const res = await fetch(`http://127.0.0.1:${targetPort}/v1/models`, {
+        headers,
+      });
+      if (res.ok) {
+        const json = await res.json();
+        const list = Array.isArray(json?.data) ? json.data : [];
+        for (const item of list) {
+          const id = typeof item === 'string' ? item : item?.id;
+          if (id && typeof id === 'string' && id.trim()) {
+            discovered.add(id.trim());
+          }
+        }
+      }
+    } catch {
+      // 忽略网络或未启动异常
+    }
+
+    // 2. 从管理 API /config 读取配置的各渠道模型
+    try {
+      const configPayload = await managementApi.get('/config');
+      if (configPayload && typeof configPayload === 'object') {
+        const sections = ['codex-api-key', 'openai-compatibility', 'claude-api-key', 'gemini-api-key'];
+        for (const s of sections) {
+          const items = responseList(configPayload, s);
+          for (const item of items) {
+            if (Array.isArray(item.models)) {
+              for (const m of item.models) {
+                const name = typeof m === 'string' ? m : readString(m, 'name', 'alias');
+                if (name) discovered.add(name);
+              }
+            }
+          }
+        }
+        // 别名
+        const aliasPayload = (configPayload as any)['oauth-model-alias'];
+        if (aliasPayload && typeof aliasPayload === 'object') {
+          for (const channel of Object.keys(aliasPayload)) {
+            const arr = aliasPayload[channel];
+            if (Array.isArray(arr)) {
+              for (const entry of arr) {
+                const alias = readString(entry, 'alias', 'name');
+                if (alias) discovered.add(alias);
+              }
+            }
+          }
+        }
+      }
+    } catch {
+      // 忽略
+    }
+
+    let modelList = Array.from(discovered);
+    if (modelList.length === 0) {
+      modelList = [...fallbackDefaultModels];
+    } else {
+      modelList.sort((a, b) => a.localeCompare(b));
+    }
+
+    setAvailableModels(modelList);
+    setIsLoadingModels(false);
+
+    // 若当前选中的模型不在已有可用列表中，自动选用第 1 个可用模型
+    setModel((prev) => {
+      if (!prev || (!discovered.has(prev) && !fallbackDefaultModels.includes(prev))) {
+        return modelList[0] || 'claude-3-5-sonnet';
+      }
+      if (discovered.size > 0 && !discovered.has(prev)) {
+        return modelList[0] || prev;
+      }
+      return prev;
+    });
+  }, [port, apiKey]);
+
+  useEffect(() => {
+    let currentPort = port;
+    let currentKey = apiKey;
+
+    invoke<any>('get_core_config_settings')
+      .then((cfg) => {
+        if (cfg?.port) {
+          currentPort = cfg.port;
+          setPort(cfg.port);
+        }
+        if (cfg?.apiKeys && Array.isArray(cfg.apiKeys) && cfg.apiKeys.length > 0) {
+          const firstKey = cfg.apiKeys[0]?.apiKey;
+          if (firstKey) {
+            currentKey = firstKey;
+            setApiKey(firstKey);
+          }
+        }
+        void loadModels(currentPort, currentKey);
+      })
+      .catch(() => {
+        void loadModels(currentPort, currentKey);
+      });
+  }, []);
+
+  // 核心就绪状态变化时重新加载模型
+  useEffect(() => {
+    if (isOnline) {
+      void loadModels(port, apiKey);
+    }
+  }, [isOnline]);
 
   useEffect(() => {
     chatBottomRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -114,12 +228,15 @@ export function PlaygroundPage() {
       }
       payloadMessages.push(...newMessages.map((m) => ({ role: m.role, content: m.content })));
 
+      const reqHeaders: Record<string, string> = {
+        'Content-Type': 'application/json',
+      };
+      const keyToSend = apiKey.trim() || 'any-proxy-key';
+      reqHeaders['Authorization'] = `Bearer ${keyToSend}`;
+
       const response = await fetch(`http://127.0.0.1:${port}/v1/chat/completions`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: 'Bearer any-proxy-key',
-        },
+        headers: reqHeaders,
         body: JSON.stringify({
           model,
           messages: payloadMessages,
@@ -130,7 +247,17 @@ export function PlaygroundPage() {
       });
 
       if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        let errMessage = `HTTP ${response.status}: ${response.statusText}`;
+        try {
+          const errBody = await response.json();
+          if (errBody?.error) {
+            const detail = typeof errBody.error === 'string' ? errBody.error : errBody.error.message || JSON.stringify(errBody.error);
+            errMessage = `HTTP ${response.status}: ${detail}`;
+          }
+        } catch {
+          // 无法解析 JSON 则保留默认状态文本
+        }
+        throw new Error(errMessage);
       }
 
       const reader = response.body?.getReader();
@@ -280,15 +407,15 @@ export function PlaygroundPage() {
       {showSettings && (
         <div className="panel" style={{
           padding: '12px 16px',
-          background: '#f8fafc',
-          border: '1px solid #e2e8f0',
+          background: 'var(--clean-card-muted)',
+          border: '1px solid var(--clean-border)',
           borderRadius: 10,
           display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
           gap: 12,
         }}>
           <div>
-            <label style={{ fontSize: 12, fontWeight: 600, color: '#475569', display: 'block', marginBottom: 4 }}>
+            <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--clean-text-secondary)', display: 'block', marginBottom: 4 }}>
               采样温度 (Temperature): {temperature}
             </label>
             <input
@@ -302,7 +429,7 @@ export function PlaygroundPage() {
             />
           </div>
           <div>
-            <label style={{ fontSize: 12, fontWeight: 600, color: '#475569', display: 'block', marginBottom: 4 }}>
+            <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--clean-text-secondary)', display: 'block', marginBottom: 4 }}>
               系统提示词 (System Prompt)
             </label>
             <input
@@ -313,24 +440,68 @@ export function PlaygroundPage() {
               style={{ width: '100%', height: 28, fontSize: 12 }}
             />
           </div>
+          <div>
+            <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--clean-text-secondary)', display: 'block', marginBottom: 4 }}>
+              鉴权密钥 (API Key)
+            </label>
+            <input
+              type="text"
+              value={apiKey}
+              onChange={(e) => setApiKey(e.target.value)}
+              placeholder="默认从系统配置自动读取..."
+              style={{ width: '100%', height: 28, fontSize: 12 }}
+            />
+          </div>
         </div>
       )}
 
       {/* 顶部控制栏与实时遥测指标 */}
       <div className="playground-top-controls">
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={{ fontSize: 12, fontWeight: 600, color: '#475569' }}>测试模型:</span>
-          <select
-            value={model}
-            onChange={(e) => setModel(e.target.value)}
-            style={{ height: 32, fontSize: 12.5, fontWeight: 600, color: '#0891b2', minWidth: 180 }}
-          >
-            {commonModels.map((m) => (
-              <option key={m} value={m}>
-                {m}
-              </option>
-            ))}
-          </select>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--clean-text-secondary)' }}>测试模型:</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <input
+              type="text"
+              list="playground-model-options"
+              value={model}
+              onChange={(e) => setModel(e.target.value)}
+              placeholder="选择或输入测试模型..."
+              style={{
+                height: 32,
+                fontSize: 12.5,
+                fontWeight: 600,
+                color: 'var(--clean-primary)',
+                minWidth: 220,
+                padding: '0 10px',
+                borderRadius: 6,
+                border: '1px solid var(--clean-border)',
+                background: 'var(--clean-card-bg)',
+              }}
+            />
+            <datalist id="playground-model-options">
+              {availableModels.map((m) => (
+                <option key={m} value={m} />
+              ))}
+            </datalist>
+
+            <button
+              type="button"
+              className="secondary-button compact-button"
+              onClick={() => void loadModels(port, apiKey)}
+              disabled={isLoadingModels}
+              title="重新从核心与配置同步模型列表"
+              style={{ padding: '0 8px', height: 32 }}
+            >
+              <RefreshCw size={13} className={isLoadingModels ? 'spin' : ''} />
+              <span style={{ fontSize: 11 }}>{isLoadingModels ? '刷新中...' : '刷新'}</span>
+            </button>
+          </div>
+
+          {availableModels.length > 0 && (
+            <span style={{ fontSize: 11, color: '#64748b' }}>
+              (已加载 {availableModels.length} 个配置模型)
+            </span>
+          )}
         </div>
 
         {/* 遥测指标胶囊 */}
@@ -353,14 +524,14 @@ export function PlaygroundPage() {
       {!isOnline && (
         <div style={{
           padding: '10px 14px',
-          background: '#fff1f2',
-          border: '1px solid #fecdd3',
+          background: 'var(--clean-status-red-bg)',
+          border: '1px solid rgba(239, 68, 68, 0.25)',
           borderRadius: 8,
           display: 'flex',
           alignItems: 'center',
           gap: 8,
           fontSize: 12.5,
-          color: '#be123c',
+          color: 'var(--clean-status-red-text)',
         }}>
           <AlertCircle size={16} />
           <span>内核代理尚未启动，请先在首页控制台点击「启动内核」后再进行测试。</span>
@@ -376,12 +547,12 @@ export function PlaygroundPage() {
             alignItems: 'center',
             justifyContent: 'center',
             height: '100%',
-            color: '#94a3b8',
+            color: 'var(--clean-text-muted)',
             gap: 8,
             padding: '40px 0',
           }}>
-            <Sparkles size={32} style={{ color: 'var(--clean-primary, #06b6d4)', opacity: 0.6 }} />
-            <strong style={{ fontSize: 14, color: '#475569' }}>欢迎使用内置模型测试舱</strong>
+            <Sparkles size={32} style={{ color: 'var(--clean-primary)', opacity: 0.7 }} />
+            <strong style={{ fontSize: 14, color: 'var(--clean-text-primary)' }}>欢迎使用内置模型测试舱</strong>
             <span style={{ fontSize: 12 }}>输入测试指令，快速验证本地代理的流式响应、思考链和速度指标</span>
           </div>
         ) : (
@@ -411,7 +582,7 @@ export function PlaygroundPage() {
                       }))
                     }
                   >
-                    <span style={{ fontWeight: 600, color: '#0891b2', display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <span style={{ fontWeight: 600, color: 'var(--clean-primary)', display: 'flex', alignItems: 'center', gap: 4 }}>
                       <Sparkles size={12} />
                       思考链过程 (Thinking Process)
                     </span>
@@ -429,7 +600,7 @@ export function PlaygroundPage() {
                 <div style={{
                   marginTop: 6,
                   fontSize: 10.5,
-                  color: '#94a3b8',
+                  color: 'var(--clean-text-muted)',
                   fontFamily: 'var(--clean-font-mono)',
                   display: 'flex',
                   gap: 10,
@@ -461,8 +632,8 @@ export function PlaygroundPage() {
           disabled={!isOnline || isGenerating}
         />
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <small style={{ fontSize: 11, color: '#94a3b8' }}>
-            提示: 按 <kbd style={{ padding: '1px 5px', borderRadius: 4, background: '#f1f5f9', border: '1px solid #cbd5e1' }}>Ctrl + Enter</kbd> 极速发送
+          <small style={{ fontSize: 11, color: 'var(--clean-text-muted)', display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+            提示: 按 <span className="cmd-kbd-badge">Ctrl + Enter</span> 极速发送
           </small>
           {isGenerating ? (
             <button type="button" className="danger-button compact-button" onClick={handleStop}>

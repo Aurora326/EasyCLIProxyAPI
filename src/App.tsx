@@ -326,7 +326,7 @@ function AppContent() {
         {active !== "easy" ? (
           <aside className="sidebar">
           <div className="sidebar-brand" title={t('app.desktopConsole')}>
-            <img src={appLogo} alt="" className="brand-mark brand-logo" />
+            <img src={appLogo} alt="" className="brand-mark brand-logo" width={36} height={36} />
             <div>
               <strong>EasyCLIProxyAPI</strong>
               <span>{t('app.desktopConsole')}</span>

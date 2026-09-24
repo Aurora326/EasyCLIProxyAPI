@@ -1,9 +1,19 @@
 import { MessageNotice } from '../appNotice';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { AlertCircle, LoaderCircle, RefreshCw } from 'lucide-react';
+import { AlertCircle, CircleDollarSign, FileText, LoaderCircle, RefreshCw } from 'lucide-react';
 import { useConfirmation } from '../components/ConfirmationDialog';
 import { QuotaActionFeedback } from '../components/QuotaActionFeedback';
 import { canResetCodexQuota, resetCodexQuotaWithConfirmation } from '../services/quotaActions';
+import {
+  calculateQuotaEstimate,
+  computeWindowStartMs,
+  extractConsumedTokens,
+  fetchWindowUsageModels,
+  getStoredQuotaDisplayMode,
+  setStoredQuotaDisplayMode,
+  type QuotaDisplayMode,
+  type WindowUsageCategory,
+} from '../services/quotaEstimate';
 import antigravityIcon from '../assets/icons/antigravity.svg';
 import claudeIcon from '../assets/icons/claude.svg';
 import codexIcon from '../assets/icons/codex.svg';
@@ -55,7 +65,13 @@ export function QuotaPage() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
+  const [displayMode, setDisplayMode] = useState<QuotaDisplayMode>(() => getStoredQuotaDisplayMode());
   const querying = Object.values(quotas).some((quota) => quota.status === 'loading');
+
+  const handleDisplayModeChange = useCallback((mode: QuotaDisplayMode) => {
+    setDisplayMode(mode);
+    setStoredQuotaDisplayMode(mode);
+  }, []);
 
   const loadFiles = useCallback(async () => {
     setLoading(true);
@@ -162,6 +178,27 @@ export function QuotaPage() {
       <header className="management-header">
         <div><h1>{t('quota.title')}</h1></div>
         <div className="management-heading-actions">
+          {files.length > 0 ? (
+            <div className="quota-display-switch">
+              <span className="quota-switch-label">{t('quota.limitUsage')}</span>
+              <div className="quota-segmented-pill">
+                <button
+                  type="button"
+                  className={`quota-segmented-btn ${displayMode === 'current' ? 'active' : ''}`}
+                  onClick={() => handleDisplayModeChange('current')}
+                >
+                  {t('quota.mode.current')}
+                </button>
+                <button
+                  type="button"
+                  className={`quota-segmented-btn ${displayMode === 'estimate' ? 'active' : ''}`}
+                  onClick={() => handleDisplayModeChange('estimate')}
+                >
+                  {t('quota.mode.estimate')}
+                </button>
+              </div>
+            </div>
+          ) : null}
           <span className="muted-summary">{t(files.length === 1 ? 'quota.queryableCredentials.one' : 'quota.queryableCredentials.other', { count: files.length })}</span>
           <button type="button" className="secondary-button compact-button" onClick={() => void loadFiles()} disabled={loading || refreshing || querying}>
             <RefreshCw size={16} />{t('quota.readList')}
@@ -181,7 +218,7 @@ export function QuotaPage() {
           {grouped.map(([provider, items]) => (
             <section className="quota-provider-group" key={provider}>
               <div className="quota-group-heading"><div><img src={providerMeta[provider].icon} alt="" className={provider === 'devin' ? 'provider-logo devin-logo' : 'provider-logo'} /><h2>{providerMeta[provider].label}</h2></div><span>{t(items.length === 1 ? 'quota.credentials.one' : 'quota.credentials.other', { count: items.length })}</span></div>
-              <div className="real-quota-grid">{items.map(({ file, quota }) => <QuotaCard key={quotaKey(file)} file={file} quota={quota} onRefresh={() => void refreshOne(file)} onReset={provider === 'codex' ? () => void resetCodexQuota(file, quota) : undefined} />)}</div>
+              <div className="real-quota-grid">{items.map(({ file, quota }) => <QuotaCard key={quotaKey(file)} file={file} quota={quota} displayMode={displayMode} onRefresh={() => void refreshOne(file)} onReset={provider === 'codex' ? () => void resetCodexQuota(file, quota) : undefined} />)}</div>
             </section>
           ))}
         </div>
@@ -190,12 +227,48 @@ export function QuotaPage() {
   );
 }
 
-export function QuotaCard({ file, quota, onRefresh, onReset }: { file: AuthFile; quota: QuotaState; onRefresh: () => void; onReset?: () => void }) {
+export function QuotaCard({
+  file,
+  quota,
+  displayMode = 'estimate',
+  onRefresh,
+  onReset,
+}: {
+  file: AuthFile;
+  quota: QuotaState;
+  displayMode?: QuotaDisplayMode;
+  onRefresh: () => void;
+  onReset?: () => void;
+}) {
   const { locale, t } = useI18n();
   const now = useQuotaClock() + (quota.serverTimeOffsetMs ?? 0);
   const provider = providerForFile(file);
   const name = fileName(file);
   const disabled = readBoolean(file, 'disabled');
+
+  const [windowUsageModels, setWindowUsageModels] = useState<Record<string, WindowUsageCategory[]>>({});
+
+  useEffect(() => {
+    if (quota.status !== 'success' || !provider || displayMode !== 'estimate') return;
+    let cancelled = false;
+
+    quota.rows.forEach(async (row) => {
+      const windowStartMs = computeWindowStartMs(row.resetAtMs, row.label);
+      const key = `${row.label}-${windowStartMs}`;
+      const models = await fetchWindowUsageModels(provider, windowStartMs);
+      if (!cancelled && models.length > 0) {
+        setWindowUsageModels((prev) => ({
+          ...prev,
+          [key]: models,
+        }));
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [quota.status, quota.rows, provider, displayMode]);
+
   return (
     <article className="panel real-quota-card">
       <div className="real-quota-card-header">
@@ -222,10 +295,32 @@ export function QuotaCard({ file, quota, onRefresh, onReset }: { file: AuthFile;
       {quota.status === 'success' && provider === 'devin' && quota.subscriptionActiveUntil ? <div className="quota-reset-credit-summary"><span>{t('quota.subscriptionExpiry', { time: formatQuotaTimestamp(quota.subscriptionActiveUntil, locale) })}</span></div> : null}
       {quota.status === 'success' ? <div className="quota-row-list">{quota.rows.map((row, index) => {
         const reset = formatQuotaReset(row.resetAtMs, row.reset, locale, now);
+        const windowStartMs = computeWindowStartMs(row.resetAtMs, row.label);
+        const models = windowUsageModels[`${row.label}-${windowStartMs}`];
+        const actualTokens = extractConsumedTokens(models, provider, row.label);
+        const estimate = displayMode === 'estimate'
+          ? calculateQuotaEstimate(provider, row.label, row.remainingPercent, row.detail, actualTokens)
+          : null;
         return <div className="real-quota-row" data-tone={quotaTone(row.remainingPercent)} key={`${row.label}-${index}`}>
           <div><span>{row.label}</span><strong>{row.remainingPercent === null ? '—' : t('quota.remaining', { percent: Math.round(row.remainingPercent) })}</strong></div>
           {row.remainingPercent !== null ? <div className="real-quota-track"><span style={{ width: `${Math.max(0, Math.min(100, row.remainingPercent))}%` }} /></div> : null}
-          <small>{[row.detail, reset].filter(Boolean).join(' · ')}</small>
+          {estimate ? (
+            <div className="real-quota-meta-row">
+              <div className="quota-estimates-container">
+                <span className="quota-estimate-badge quota-estimate-tokens" title={estimate.tooltip || t('quota.estimate.tokens')}>
+                  <FileText size={12} />
+                  <span>{estimate.estimatedTokensFormatted}</span>
+                </span>
+                <span className="quota-estimate-badge quota-estimate-usd" title={estimate.tooltip || t('quota.estimate.usd')}>
+                  <CircleDollarSign size={12} />
+                  <span>{estimate.estimatedCostUsdFormatted}</span>
+                </span>
+              </div>
+              {reset || row.detail ? <small className="quota-reset-text">{reset || row.detail}</small> : null}
+            </div>
+          ) : (
+            <small>{[row.detail, reset].filter(Boolean).join(' · ')}</small>
+          )}
         </div>;
       })}</div> : null}
     </article>

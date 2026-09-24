@@ -5,7 +5,9 @@ import { MessageNotice, FloatingNotice, useAppNotice } from '../appNotice';
 import { AuthFileModelsDialog } from '../components/AuthFileModelsDialog';
 import {
   Check,
+  CircleDollarSign,
   FileDown,
+  FileText,
   FolderOpen,
   Import,
   LoaderCircle,
@@ -41,6 +43,14 @@ import {
   quotaTone,
   type QuotaState,
 } from '../services/quotaService';
+import {
+  calculateQuotaEstimate,
+  computeWindowStartMs,
+  extractConsumedTokens,
+  fetchWindowUsageModels,
+  getStoredQuotaDisplayMode,
+  type WindowUsageCategory,
+} from '../services/quotaEstimate';
 import {
   captureQuotaCacheGeneration,
   commitQuotaCacheIfCurrent,
@@ -117,9 +127,43 @@ const statusText = (file: AuthFile) => {
   return readString(file, 'status') || translate(getCurrentLocale(), 'authFiles.status.ready');
 };
 
-function AuthFileQuotaSummary({ quota, name }: { quota: QuotaState; name: string }) {
+function AuthFileQuotaSummary({
+  quota,
+  name,
+  file,
+}: {
+  quota: QuotaState;
+  name: string;
+  file?: AuthFile;
+}) {
   const { locale, t } = useI18n();
   const now = useQuotaClock() + (quota.serverTimeOffsetMs ?? 0);
+  const provider = file ? quotaProviderForFile(file) : undefined;
+  const displayMode = getStoredQuotaDisplayMode();
+
+  const [windowUsageModels, setWindowUsageModels] = useState<Record<string, WindowUsageCategory[]>>({});
+
+  useEffect(() => {
+    if (quota.status !== 'success' || !provider || displayMode !== 'estimate') return;
+    let cancelled = false;
+
+    quota.rows.forEach(async (row) => {
+      const windowStartMs = computeWindowStartMs(row.resetAtMs, row.label);
+      const key = `${row.label}-${windowStartMs}`;
+      const models = await fetchWindowUsageModels(provider, windowStartMs);
+      if (!cancelled && models.length > 0) {
+        setWindowUsageModels((prev) => ({
+          ...prev,
+          [key]: models,
+        }));
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [quota.status, quota.rows, provider, displayMode]);
+
   if (quota.status === 'loading') {
     return (
       <div className="auth-file-quota loading">
@@ -145,6 +189,12 @@ function AuthFileQuotaSummary({ quota, name }: { quota: QuotaState; name: string
         <div className="quota-row-list auth-file-quota-rows">
           {quota.rows.map((row, index) => {
             const reset = formatQuotaReset(row.resetAtMs, row.reset, locale, now);
+            const windowStartMs = computeWindowStartMs(row.resetAtMs, row.label);
+            const models = windowUsageModels[`${row.label}-${windowStartMs}`];
+            const actualTokens = extractConsumedTokens(models, provider, row.label);
+            const estimate = displayMode === 'estimate'
+              ? calculateQuotaEstimate(provider, row.label, row.remainingPercent, row.detail, actualTokens)
+              : null;
             return (
               <div className="real-quota-row" data-tone={quotaTone(row.remainingPercent)} key={`${row.label}-${index}`}>
                 <div>
@@ -156,7 +206,21 @@ function AuthFileQuotaSummary({ quota, name }: { quota: QuotaState; name: string
                     <span style={{ width: `${Math.max(0, Math.min(100, row.remainingPercent))}%` }} />
                   </div>
                 ) : null}
-                {[row.detail, reset].filter(Boolean).length > 0 ? (
+                {estimate ? (
+                  <div className="real-quota-meta-row">
+                    <div className="quota-estimates-container">
+                      <span className="quota-estimate-badge quota-estimate-tokens" title={estimate.tooltip || t('quota.estimate.tokens')}>
+                        <FileText size={11} />
+                        <span>{estimate.estimatedTokensFormatted}</span>
+                      </span>
+                      <span className="quota-estimate-badge quota-estimate-usd" title={estimate.tooltip || t('quota.estimate.usd')}>
+                        <CircleDollarSign size={11} />
+                        <span>{estimate.estimatedCostUsdFormatted}</span>
+                      </span>
+                    </div>
+                    {reset || row.detail ? <small className="quota-reset-text">{reset || row.detail}</small> : null}
+                  </div>
+                ) : [row.detail, reset].filter(Boolean).length > 0 ? (
                   <small>{[row.detail, reset].filter(Boolean).join(' · ')}</small>
                 ) : null}
               </div>
@@ -545,7 +609,7 @@ export function AuthFileManagementPage() {
                     <span>{formatDate(file.modtime ?? file.updated_at ?? file.last_refresh)}</span>
                     {isRuntimeOnly(file) ? <span className="state-pill">{t('authFiles.runtime')}</span> : null}
                   </div>
-                  {quotaProviderForFile(file) && quotas[quotaKey(file)]?.status !== 'idle' ? <AuthFileQuotaSummary quota={quotas[quotaKey(file)] ?? idleQuota()} name={name} /> : null}
+                  {quotaProviderForFile(file) && quotas[quotaKey(file)]?.status !== 'idle' ? <AuthFileQuotaSummary quota={quotas[quotaKey(file)] ?? idleQuota()} name={name} file={file} /> : null}
                   <div className="auth-file-actions">
                     {quotaProviderForFile(file) && !disabled ? <button type="button" className="secondary-button compact-button" onClick={() => void refreshQuota(file)} disabled={busy || quotas[quotaKey(file)]?.status === 'loading'}>{quotas[quotaKey(file)]?.status === 'loading' ? t('authFiles.quota.querying') : quotas[quotaKey(file)]?.status === 'success' ? t('authFiles.quota.refresh') : t('authFiles.quota.fetch')}</button> : null}
                     {providerKey(file) ? <button type="button" className="secondary-button compact-button" onClick={() => setModelViewName(name)} disabled={busy || disabled} title={t('authFiles.models.viewTitle')}>{t('authFiles.models.button')}</button> : null}

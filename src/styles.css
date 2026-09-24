@@ -9872,6 +9872,120 @@ body.table-col-resizing * {
   font-size: var(--font-size-meta);
 }
 
+.real-quota-meta-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 22px;
+  margin-top: 4px;
+}
+
+.quota-estimates-container {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.quota-estimate-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11.5px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  padding: 1.5px 7px;
+  border-radius: 5px;
+  line-height: 1.35;
+  letter-spacing: -0.01em;
+  transition: all 0.15s ease;
+}
+
+.quota-estimate-badge svg {
+  flex-shrink: 0;
+  opacity: 0.85;
+}
+
+/* Token 徽章：深度适配客户端品牌科技青蓝 (Primary) */
+.quota-estimate-tokens {
+  background: var(--clean-primary-soft, rgba(2, 132, 199, 0.08));
+  color: var(--clean-primary, #0284c7);
+  border: 1px solid var(--clean-primary-border, rgba(2, 132, 199, 0.22));
+}
+
+/* 金额徽章：深度适配客户端状态绿 (Status Green) */
+.quota-estimate-usd {
+  background: var(--clean-status-green-bg, rgba(13, 148, 136, 0.1));
+  color: var(--clean-status-green-text, #0f766e);
+  border: 1px solid rgba(13, 148, 136, 0.22);
+}
+
+:root[data-theme='dark'] .quota-estimate-usd,
+[data-theme='dark'] .quota-estimate-usd {
+  border-color: rgba(52, 211, 153, 0.25);
+}
+
+.quota-reset-text {
+  color: var(--clean-text-muted, var(--theme-9a958d));
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  margin-left: auto;
+}
+
+/* 顶部“限额用量：[当前] [预估]”控制开关 */
+.quota-display-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  color: var(--clean-text-secondary, var(--theme-5f5a53));
+}
+
+.quota-switch-label {
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.quota-segmented-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px;
+  border-radius: 7px;
+  background: var(--clean-card-muted, var(--theme-e8e5dc));
+  border: 1px solid var(--clean-border, rgba(0, 0, 0, 0.08));
+}
+
+.quota-segmented-btn {
+  border: none;
+  background: transparent;
+  padding: 3px 10px;
+  border-radius: 5px;
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--clean-text-secondary, var(--theme-7a746c));
+  cursor: pointer;
+  transition: all 0.15s ease;
+  user-select: none;
+}
+
+.quota-segmented-btn:hover {
+  color: var(--clean-text-primary, var(--theme-2d2a26));
+}
+
+.quota-segmented-btn.active {
+  background: var(--clean-card-bg, #ffffff);
+  color: var(--clean-primary, var(--theme-2d2a26));
+  font-weight: 600;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+}
+
+:root[data-theme='dark'] .quota-segmented-btn.active,
+[data-theme='dark'] .quota-segmented-btn.active {
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+}
+
 .quota-card-message,
 .quota-card-error {
   display: flex;
