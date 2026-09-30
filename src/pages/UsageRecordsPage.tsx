@@ -813,7 +813,6 @@ function UsageDataManagementView() {
           <Wrench size={20} aria-hidden="true" />
           <div>
             <h2>{t('usage.dataManagement.title')}</h2>
-            <p>{t('usage.dataManagement.description')}</p>
           </div>
         </div>
         <span className="usage-data-management-badge">{t('usage.dataManagement.manualBadge')}</span>

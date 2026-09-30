@@ -71,11 +71,11 @@ type ModelAliasEditContext = {
 };
 
 const effortOptions = [
-  { value: 'low', label: 'Low', hintKey: 'aliases.effort.low' },
-  { value: 'medium', label: 'Medium', hintKey: 'aliases.effort.medium' },
-  { value: 'high', label: 'High', hintKey: 'aliases.effort.high' },
-  { value: 'xhigh', label: 'XHigh', hintKey: 'aliases.effort.xhigh' },
-  { value: 'max', label: 'Max', hintKey: 'aliases.effort.max' },
+  { value: 'low', label: '轻量 (Low)', hintKey: 'aliases.effort.low' },
+  { value: 'medium', label: '均衡 (Medium)', hintKey: 'aliases.effort.medium' },
+  { value: 'high', label: '深入 (High)', hintKey: 'aliases.effort.high' },
+  { value: 'xhigh', label: '超高 (XHigh)', hintKey: 'aliases.effort.xhigh' },
+  { value: 'max', label: '最大 (Max)', hintKey: 'aliases.effort.max' },
 ] as const satisfies ReadonlyArray<{ value: PresetThinkingEffort; label: string; hintKey: string }>;
 
 export const combineModelAliasEntries = (
@@ -606,7 +606,7 @@ export function ThinkingAliasesPage() {
               <span><GitFork size={18} /></span>
               <div>
                 <h2 id="thinking-alias-editor-title">{t(editingEntry ? 'common.edit' : 'aliases.create.title')}</h2>
-                <p>{t('aliases.create.description')}</p>
+                
               </div>
               <button type="button" className="icon-button quiet" onClick={closeEditor} disabled={Boolean(busyAlias)} title={t('common.close')} aria-label={t('common.close')}>
                 <X size={18} />
@@ -763,7 +763,7 @@ export function ThinkingAliasesPage() {
               </div>
               <label className={`thinking-fast-option${fastEnabled ? ' active' : ''}`}>
                 <span className="thinking-fast-option-copy">
-                  <span><Zap size={15} /> Fast</span>
+                  <span><Zap size={15} /> 极速推理 (Fast)</span>
                   <small>{fastEnabled ? t('aliases.fast.enabled') : t('aliases.fast.disabled')}</small>
                 </span>
                 <span className="switch-control thinking-fast-switch">

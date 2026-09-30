@@ -53,12 +53,35 @@ pub(crate) fn acquire_app_instance_guard_for(
     }
     if unsafe { GetLastError() } == ERROR_ALREADY_EXISTS {
         unsafe { CloseHandle(handle) };
+        try_wake_existing_window();
         return Err("当前 EasyCLIProxyAPI 目录已经有一个软件实例在运行".to_string());
     }
 
     Ok(AppInstanceGuard {
         handle: handle as isize,
     })
+}
+
+#[cfg(windows)]
+fn try_wake_existing_window() {
+    use std::ffi::OsStr;
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        FindWindowW, SetForegroundWindow, ShowWindow, SW_RESTORE, SW_SHOW,
+    };
+
+    let title = OsStr::new("EasyCLIProxyAPI")
+        .encode_wide()
+        .chain(Some(0))
+        .collect::<Vec<_>>();
+    unsafe {
+        let hwnd = FindWindowW(std::ptr::null(), title.as_ptr());
+        if !hwnd.is_null() {
+            ShowWindow(hwnd, SW_RESTORE);
+            ShowWindow(hwnd, SW_SHOW);
+            SetForegroundWindow(hwnd);
+        }
+    }
 }
 
 #[cfg(unix)]

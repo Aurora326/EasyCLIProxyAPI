@@ -801,7 +801,11 @@ async function callUpstreamQuota(
     throw new Error(quotaText('quota.service.error.missingProject'));
   }
   const urls = provider === 'antigravity'
-    ? [endpointByProvider.antigravity, 'https://daily-cloudcode-pa.sandbox.googleapis.com/v1internal:retrieveUserQuotaSummary', 'https://cloudcode-pa.googleapis.com/v1internal:retrieveUserQuotaSummary']
+    ? [
+        endpointByProvider.antigravity,
+        'https://cloudcode-pa.googleapis.com/v1internal:retrieveUserQuotaSummary',
+        'https://daily-cloudcode-pa.sandbox.googleapis.com/v1internal:retrieveUserQuotaSummary',
+      ]
     : [endpointByProvider[provider]];
   let lastError = '';
   let hadSuccessfulResponse = false;

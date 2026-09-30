@@ -7,6 +7,7 @@ import {
   Globe,
   History,
   House,
+  KeyRound,
   LogIn,
   Moon,
   Network,
@@ -64,13 +65,22 @@ export function CommandPalette({
     return [
       // 导航类
       {
-        id: 'nav-home',
-        title: t('app.nav.home'),
-        subtitle: '跳转至首页运行控制',
+        id: 'nav-overview',
+        title: '运行概览 (Command Center)',
+        subtitle: '跳转至 AI Gateway 指挥中心与实时监控看板',
         category: 'navigation',
         icon: House,
-        keywords: ['home', 'shouye', '控制台', '首页'],
-        run: () => onNavigate('home'),
+        keywords: ['overview', 'command', 'center', 'gailan', '概览', '首页'],
+        run: () => onNavigate('overview'),
+      },
+      {
+        id: 'nav-providers',
+        title: '供应商集群 (Providers)',
+        subtitle: '跳转至多厂商 AI 模型上游供应商集群',
+        category: 'navigation',
+        icon: Network,
+        keywords: ['providers', 'openai', 'claude', 'gemini', 'deepseek', '供应商'],
+        run: () => onNavigate('providers'),
       },
       {
         id: 'nav-api',
@@ -82,6 +92,15 @@ export function CommandPalette({
         run: () => onNavigate('api'),
       },
       {
+        id: 'nav-routes',
+        title: '路由转发与别名 (Routes)',
+        subtitle: '跳转至请求转发规则、别名与 Thinking 模式路由',
+        category: 'navigation',
+        icon: Settings,
+        keywords: ['routes', 'mapping', 'alias', 'luyou', '路由', '映射'],
+        run: () => onNavigate('routes'),
+      },
+      {
         id: 'nav-playground',
         title: t('app.nav.playground'),
         subtitle: '跳转至模型极速测试舱 (Playground)',
@@ -89,6 +108,26 @@ export function CommandPalette({
         icon: Zap,
         keywords: ['playground', 'test', 'ceshi', '测试', '对话', '流式'],
         run: () => onNavigate('playground'),
+      },
+      
+      {
+        id: 'nav-logs',
+        title: '请求流水日志',
+        subtitle: '跳转至全量 API 接入请求明细与 Token 统计',
+        category: 'navigation',
+        icon: History,
+        keywords: ['logs', 'records', 'rizhi', '日志', '流水'],
+        run: () => onNavigate('logs'),
+      },
+      
+      {
+        id: 'nav-api-keys',
+        title: 'API 密钥管理 (Keys)',
+        subtitle: '跳转至网关 Bearer Token 凭证生成与吊销',
+        category: 'navigation',
+        icon: KeyRound,
+        keywords: ['keys', 'token', 'bearer', 'miyao', '密钥'],
+        run: () => onNavigate('api-keys'),
       },
       {
         id: 'nav-oauth',
@@ -108,15 +147,7 @@ export function CommandPalette({
         keywords: ['agent', 'zhinengti', '智能体', 'claude', 'codex'],
         run: () => onNavigate('agents'),
       },
-      {
-        id: 'nav-usage',
-        title: t('app.nav.usageRecords'),
-        subtitle: '跳转至使用记录与 Token 统计',
-        category: 'navigation',
-        icon: History,
-        keywords: ['usage', 'records', 'token', 'shiyong', '记录', '统计'],
-        run: () => onNavigate('usage-records'),
-      },
+      
       {
         id: 'nav-config',
         title: t('app.nav.config'),

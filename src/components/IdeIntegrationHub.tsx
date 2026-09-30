@@ -60,8 +60,8 @@ export function IdeIntegrationHub({ defaultPort = 8317 }: { defaultPort?: number
   return (
     <div className="panel" style={{
       marginBottom: 16,
-      background: 'linear-gradient(180deg, #ffffff 0%, #fcfdfd 100%)',
-      border: '1px solid rgba(226, 232, 240, 0.95)',
+      background: 'var(--bg-card, #ffffff)',
+      border: '1px solid var(--border-color, #e2e8f0)',
       borderRadius: 12,
       overflow: 'hidden',
       boxShadow: '0 1px 3px rgba(15, 23, 42, 0.04)',

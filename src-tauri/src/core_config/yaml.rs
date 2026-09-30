@@ -241,12 +241,25 @@ pub(crate) fn patch_core_api_keys(api_keys: &[String]) -> Result<(), String> {
 pub(crate) fn patch_core_management_secret_key(secret_key: &str) -> Result<(), String> {
     let secret_key = secret_key.to_string();
     patch_existing_core_config(move |document| {
-        set_core_yaml_nested_value(
-            document,
-            "remote-management",
-            "secret-key",
-            serde_norway::Value::String(secret_key),
-        )
+        let is_v8_management = document
+            .as_mapping()
+            .and_then(|m| nested_yaml_value(m, &["management"]))
+            .is_some();
+        if is_v8_management {
+            set_core_yaml_nested_value(
+                document,
+                "management",
+                "secret-key",
+                serde_norway::Value::String(secret_key),
+            )
+        } else {
+            set_core_yaml_nested_value(
+                document,
+                "remote-management",
+                "secret-key",
+                serde_norway::Value::String(secret_key),
+            )
+        }
     })
 }
 
@@ -254,7 +267,20 @@ pub(crate) fn patch_core_management_secret_key(secret_key: &str) -> Result<(), S
 pub(crate) fn patch_core_auth_dir(auth_dir: &str) -> Result<(), String> {
     let auth_dir = auth_dir.to_string();
     patch_existing_core_config(move |document| {
-        set_core_yaml_top_level_value(document, "auth-dir", serde_norway::Value::String(auth_dir))
+        let is_v8_oauth = document
+            .as_mapping()
+            .and_then(|m| nested_yaml_value(m, &["oauth"]))
+            .is_some();
+        if is_v8_oauth {
+            set_core_yaml_nested_value(
+                document,
+                "oauth",
+                "auth-dir",
+                serde_norway::Value::String(auth_dir),
+            )
+        } else {
+            set_core_yaml_top_level_value(document, "auth-dir", serde_norway::Value::String(auth_dir))
+        }
     })
 }
 
@@ -275,44 +301,57 @@ pub(crate) fn patch_core_request_log(enabled: bool) -> Result<(), String> {
     })
 }
 
+pub(crate) fn patch_core_logging_settings_document(
+    document: &mut serde_norway::Value,
+    settings: &CoreConfigSettings,
+) -> Result<bool, String> {
+    let mut changed = false;
+    for (key, value) in [
+        ("debug", serde_norway::Value::Bool(settings.debug)),
+        (
+            "commercial-mode",
+            serde_norway::Value::Bool(settings.commercial_mode),
+        ),
+        (
+            "logging-to-file",
+            serde_norway::Value::Bool(settings.logging_to_file),
+        ),
+        (
+            "logs-max-total-size-mb",
+            serde_norway::to_value(settings.logs_max_total_size_mb)
+                .map_err(|err| format!("序列化日志容量限制失败: {err}"))?,
+        ),
+        (
+            "error-logs-max-files",
+            serde_norway::to_value(settings.error_logs_max_files)
+                .map_err(|err| format!("序列化错误日志保留数失败: {err}"))?,
+        ),
+        (
+            "usage-statistics-enabled",
+            serde_norway::Value::Bool(settings.usage_statistics_enabled),
+        ),
+        (
+            "redis-usage-queue-retention-seconds",
+            serde_norway::to_value(settings.redis_usage_queue_retention_seconds)
+                .map_err(|err| format!("序列化 Redis 用量队列保留时间失败: {err}"))?,
+        ),
+    ] {
+        changed |= set_core_yaml_top_level_value(document, key, value.clone())?;
+        if (key == "usage-statistics-enabled" || key == "redis-usage-queue-retention-seconds")
+            && document
+                .as_mapping()
+                .and_then(|root| root.get(&yaml_key("usage")))
+                .is_some()
+        {
+            changed |= set_core_yaml_nested_value(document, "usage", key, value)?;
+        }
+    }
+    Ok(changed)
+}
+
 pub(crate) fn patch_core_logging_settings(settings: &CoreConfigSettings) -> Result<(), String> {
     let settings = settings.clone();
-    patch_existing_core_config(move |document| {
-        let mut changed = false;
-        for (key, value) in [
-            ("debug", serde_norway::Value::Bool(settings.debug)),
-            (
-                "commercial-mode",
-                serde_norway::Value::Bool(settings.commercial_mode),
-            ),
-            (
-                "logging-to-file",
-                serde_norway::Value::Bool(settings.logging_to_file),
-            ),
-            (
-                "logs-max-total-size-mb",
-                serde_norway::to_value(settings.logs_max_total_size_mb)
-                    .map_err(|err| format!("序列化日志容量限制失败: {err}"))?,
-            ),
-            (
-                "error-logs-max-files",
-                serde_norway::to_value(settings.error_logs_max_files)
-                    .map_err(|err| format!("序列化错误日志保留数失败: {err}"))?,
-            ),
-            (
-                "usage-statistics-enabled",
-                serde_norway::Value::Bool(settings.usage_statistics_enabled),
-            ),
-            (
-                "redis-usage-queue-retention-seconds",
-                serde_norway::to_value(settings.redis_usage_queue_retention_seconds)
-                    .map_err(|err| format!("序列化 Redis 用量队列保留时间失败: {err}"))?,
-            ),
-        ] {
-            changed |= set_core_yaml_top_level_value(document, key, value)?;
-        }
-        Ok(changed)
-    })
+    patch_existing_core_config(move |document| patch_core_logging_settings_document(document, &settings))
 }
 
 pub(crate) fn patch_core_routing_strategy(strategy: &str) -> Result<(), String> {
@@ -979,6 +1018,24 @@ pub(crate) fn patch_core_api_keys_yaml(
     let root = parsed
         .as_mapping()
         .ok_or_else(|| "内核配置顶层必须是 YAML 映射".to_string())?;
+
+    if nested_yaml_value(root, &["access"]).is_some() {
+        let sequence = serde_norway::Value::Sequence(
+            api_keys
+                .iter()
+                .cloned()
+                .map(serde_norway::Value::String)
+                .collect(),
+        );
+        let updated = patch_core_yaml_document(content, |document| {
+            set_core_yaml_nested_value(document, "access", "api-keys", sequence)
+        })?
+        .unwrap_or_else(|| content.to_string());
+        serde_norway::from_str::<serde_norway::Value>(&updated)
+            .map_err(|err| format!("验证更新后的内核配置失败: {err}"))?;
+        return Ok(updated);
+    }
+
     let has_legacy_api_keys = nested_yaml_value(
         root,
         &["auth", "providers", "config-api-key", "api-key-entries"],
@@ -1156,7 +1213,8 @@ pub(crate) fn core_config_settings_from_value(
     let root = document
         .as_mapping()
         .ok_or_else(|| "内核配置顶层必须是 YAML 映射".to_string())?;
-    let host = yaml_mapping_value(root, "host")
+    let host = nested_yaml_value(root, &["server", "host"])
+        .or_else(|| yaml_mapping_value(root, "host"))
         .map(|value| {
             value
                 .as_str()
@@ -1165,7 +1223,8 @@ pub(crate) fn core_config_settings_from_value(
         })
         .transpose()?
         .unwrap_or_else(|| "127.0.0.1".to_string());
-    let port = yaml_mapping_value(root, "port")
+    let port = nested_yaml_value(root, &["server", "port"])
+        .or_else(|| yaml_mapping_value(root, "port"))
         .map(|value| {
             value
                 .as_u64()
@@ -1175,7 +1234,8 @@ pub(crate) fn core_config_settings_from_value(
         })
         .transpose()?
         .unwrap_or(8317);
-    let auth_dir = yaml_mapping_value(root, "auth-dir")
+    let auth_dir = nested_yaml_value(root, &["oauth", "auth-dir"])
+        .or_else(|| yaml_mapping_value(root, "auth-dir"))
         .map(|value| {
             value
                 .as_str()
@@ -1226,7 +1286,8 @@ pub(crate) fn core_config_settings_from_value(
         })
         .transpose()?
         .unwrap_or(DEFAULT_ERROR_LOGS_MAX_FILES);
-    let usage_statistics_enabled = yaml_mapping_value(root, "usage-statistics-enabled")
+    let usage_statistics_enabled = nested_yaml_value(root, &["usage", "usage-statistics-enabled"])
+        .or_else(|| yaml_mapping_value(root, "usage-statistics-enabled"))
         .map(|value| {
             value
                 .as_bool()
@@ -1235,7 +1296,8 @@ pub(crate) fn core_config_settings_from_value(
         .transpose()?
         .unwrap_or(true);
     let redis_usage_queue_retention_seconds =
-        yaml_mapping_value(root, "redis-usage-queue-retention-seconds")
+        nested_yaml_value(root, &["usage", "redis-usage-queue-retention-seconds"])
+            .or_else(|| yaml_mapping_value(root, "redis-usage-queue-retention-seconds"))
             .map(|value| {
                 value
                     .as_u64()
@@ -1384,6 +1446,9 @@ pub(crate) fn core_config_settings_from_value(
 }
 
 pub(crate) fn extract_core_api_keys(root: &serde_norway::Mapping) -> Result<Vec<String>, String> {
+    if let Some(value) = nested_yaml_value(root, &["access", "api-keys"]) {
+        return extract_api_key_sequence(value, "access.api-keys");
+    }
     if let Some(value) = yaml_mapping_value(root, "api-keys") {
         return extract_api_key_sequence(value, "api-keys");
     }
@@ -1443,12 +1508,14 @@ pub(crate) fn extract_api_key_value(value: &serde_norway::Value) -> Option<Resul
 pub(crate) fn extract_core_management_secret_key(
     root: &serde_norway::Mapping,
 ) -> Result<Option<String>, String> {
-    let Some(value) = nested_yaml_value(root, &["remote-management", "secret-key"]) else {
+    let value = nested_yaml_value(root, &["management", "secret-key"])
+        .or_else(|| nested_yaml_value(root, &["remote-management", "secret-key"]));
+    let Some(value) = value else {
         return Ok(None);
     };
     let value = value
         .as_str()
-        .ok_or_else(|| "remote-management.secret-key 必须是字符串".to_string())?
+        .ok_or_else(|| "management.secret-key 必须是字符串".to_string())?
         .trim()
         .to_string();
     if value.is_empty() {

@@ -6,6 +6,7 @@ import { I18nProvider } from './i18n';
 import { initializeTheme } from './theme';
 import './styles.css';
 import './apple-theme.css';
+import './design-system.css';
 
 initializeTheme();
 

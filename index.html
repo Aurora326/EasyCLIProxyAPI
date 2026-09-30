@@ -15,10 +15,13 @@
           : window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
         document.documentElement.dataset.theme = theme;
         document.documentElement.style.colorScheme = theme;
-        document.documentElement.style.backgroundColor = theme === 'dark' ? '#0b0d11' : '#f6f7f5';
+        document.documentElement.style.backgroundColor = theme === 'dark' ? '#0B1020' : '#F8FAFC';
       })();
     </script>
     <title>EasyCLIProxyAPI</title>
+      <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;600;700&display=swap" rel="stylesheet">
   </head>
   <body>
     <div id="root"></div>

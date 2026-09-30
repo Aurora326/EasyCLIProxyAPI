@@ -1,26 +1,40 @@
 import { MessageNotice } from './appNotice';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useMemo } from 'react';
 import { invoke, isTauri } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import {
+  Activity,
   Bot,
   Check,
+  Cpu,
   ExternalLink,
   History,
   House,
+  KeyRound,
+  Layers,
+  LineChart,
   Lock,
   LogIn,
   MessageCircle,
   Network,
   PackageOpen,
+  Route,
   Search,
   ServerCog,
   Settings,
+  ShieldCheck,
+  Sliders,
+  TriangleAlert,
   X,
   Zap,
 } from 'lucide-react';
 import appLogo from './assets/logo.jpg';
 import { CommandPalette } from './components/CommandPalette';
+import { ConsoleSidebar } from './components/ConsoleSidebar';
+import { ConsoleHeader } from './components/ConsoleHeader';
+import { CommandCenterPage } from './pages/CommandCenterPage';
+import { ProvidersPage } from './pages/ProvidersPage';
+import { ApiKeysPage } from './pages/ApiKeysPage';
 import { PlaygroundPage } from './pages/PlaygroundPage';
 import { CoreRuntimeProvider, useCoreRuntime } from './coreRuntime';
 import { CoreUpdateProvider, useCoreUpdate } from './coreUpdate';
@@ -32,6 +46,7 @@ import { OAuthManagementPage } from './pages/ManagementPages';
 import { AgentsPage } from './pages/AgentsPage';
 import { EasyModePage } from './pages/EasyModePage';
 import { UsageRecordsPage } from './pages/UsageRecordsPage';
+import { ThinkingAliasesPage } from './pages/ThinkingAliasesPage';
 import { useI18n } from './i18n';
 import { AppUpdateDialog, AppUpdateProvider, useAppUpdate } from './appUpdate';
 import { appUpdateIndicatorState } from './appUpdateModel';
@@ -41,64 +56,6 @@ import { useQuotaAutoRefresh } from './services/quotaAutoRefresh';
 
 const CONTACT_URL = 'https://qm.qq.com/q/3queDaIG';
 
-const pages = [
-  {
-    id: 'easy',
-    labelKey: 'app.nav.easy',
-    icon: House,
-    component: HomePage,
-  },
-  {
-    id: 'home',
-    labelKey: 'app.nav.home',
-    icon: House,
-    component: HomePage,
-  },
-  {
-    id: 'api',
-    labelKey: 'app.nav.api',
-    icon: Network,
-    component: ApiAccessPage,
-  },
-  {
-    id: 'playground',
-    labelKey: 'app.nav.playground',
-    icon: Zap,
-    component: PlaygroundPage,
-  },
-  {
-    id: 'oauth',
-    labelKey: 'app.nav.oauth',
-    icon: LogIn,
-    component: OAuthManagementPage,
-  },
-  {
-    id: 'agents',
-    labelKey: 'app.nav.agents',
-    icon: Bot,
-    component: AgentsPage,
-  },
-  {
-    id: 'usage-records',
-    labelKey: 'app.nav.usageRecords',
-    icon: History,
-    component: UsageRecordsPage,
-  },
-  {
-    id: 'config',
-    labelKey: 'app.nav.config',
-    icon: Settings,
-    component: ConfigPanelPage,
-  },
-  {
-    id: 'versions',
-    labelKey: 'app.nav.versions',
-    icon: PackageOpen,
-    component: VersionManagementPageWrapper,
-  },
-] as const;
-
-type PageId = (typeof pages)[number]['id'];
 type WindowsCloseAction = 'exit' | 'minimize-to-tray';
 type WindowsCloseBehavior = 'ask' | WindowsCloseAction;
 
@@ -110,15 +67,8 @@ type WindowsClosePrompt = {
 
 type GuiSettings = {
   closeBehavior: WindowsCloseBehavior;
+  port?: number;
 };
-
-function HomePage() {
-  return <KernelPage view="home" />;
-}
-
-function VersionManagementPageWrapper() {
-  return <VersionManagementPage />;
-}
 
 function App() {
   return (
@@ -136,16 +86,27 @@ function AppContent() {
   const { locale, setLocale, t } = useI18n();
   const { info: appUpdateInfo, hasUpdate, processing: appUpdateProcessing } = useAppUpdate();
   const { latest: coreLatest, hasUpdate: coreHasUpdate } = useCoreUpdate();
-  const [active, setActive] = useState<PageId>('home');
+  const [active, setActive] = useState<string>('overview');
   const [theme, setTheme] = useThemePreference();
   const [cmdPaletteOpen, setCmdPaletteOpen] = useState(false);
   const [windowsClosePrompt, setWindowsClosePrompt] = useState<WindowsClosePrompt | null>(null);
+  const [corePort, setCorePort] = useState(8317);
   const closeDialogRef = useRef<HTMLElement>(null);
   const { status, refreshStatus } = useCoreRuntime();
   const coreRunning = Boolean(status?.running);
   useQuotaAutoRefresh(coreRunning);
 
-  // 全局快捷键监听：Ctrl+K 打开命令面板，Ctrl+1~7 快速切页
+  useEffect(() => {
+    if (isTauri()) {
+      void invoke<{ port: number }>('get_gui_settings')
+        .then((settings) => {
+          if (settings.port) setCorePort(settings.port);
+        })
+        .catch(() => undefined);
+    }
+  }, []);
+
+  // 全局快捷键监听：Ctrl+K 打开命令面板
   useEffect(() => {
     const handleKeyDown = (event: globalThis.KeyboardEvent) => {
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
@@ -153,21 +114,10 @@ function AppContent() {
         setCmdPaletteOpen((prev) => !prev);
         return;
       }
-      if ((event.ctrlKey || event.metaKey) && !event.shiftKey && !event.altKey) {
-        const num = Number.parseInt(event.key, 10);
-        if (num >= 1 && num <= 7) {
-          const navPages = pages.filter((p) => p.id !== 'easy');
-          const targetPage = navPages[num - 1];
-          if (targetPage && canOpenAppPage(targetPage.id, coreRunning)) {
-            event.preventDefault();
-            setActive(targetPage.id);
-          }
-        }
-      }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [coreRunning]);
+  }, []);
 
   const handleRunCoreCommand = async (cmd: 'start_core_process' | 'stop_core_process' | 'restart_core_process') => {
     try {
@@ -181,32 +131,17 @@ function AppContent() {
   };
 
   const handleCopyApiUrl = async (type: 'openai' | 'claude' | 'gemini') => {
-    let port = 8317;
-    try {
-      if (isTauri()) {
-        const settings = await invoke<{ port: number }>('get_gui_settings');
-        if (settings.port) port = settings.port;
-      }
-    } catch {}
+    let port = corePort;
     let url = `http://127.0.0.1:${port}`;
     if (type === 'openai') url += '/v1';
     try {
       await navigator.clipboard.writeText(url);
     } catch {}
   };
-  const activePage = pages.find((page) => page.id === active) ?? pages[0];
-  const ActivePage = activePage.component;
-  const availableUpdateLabel = [
-    hasUpdate
-      ? t('appUpdate.badgeAvailable', { version: appUpdateInfo?.latestVersion ?? '' })
-      : '',
-    coreHasUpdate
-      ? `${t('kernel.versions.coreCardTitle')}: ${t('kernel.update.available')} ${coreLatest?.version ?? ''}`.trim()
-      : '',
-  ].filter(Boolean).join(' · ');
+
   useEffect(() => {
     if (!canOpenAppPage(active, coreRunning)) {
-      setActive('home');
+      setActive('overview');
     }
   }, [active, coreRunning]);
 
@@ -267,7 +202,7 @@ function AppContent() {
     return () => window.cancelAnimationFrame(frame);
   }, [windowsClosePrompt]);
 
-  const select = (pageId: PageId) => {
+  const select = (pageId: string) => {
     if (!canOpenAppPage(pageId, coreRunning)) {
       return;
     }
@@ -320,146 +255,124 @@ function AppContent() {
     }
   };
 
+  // 页面元信息配置 (全中文沉浸式设计)
+  const pageMeta = useMemo(() => {
+    switch (active) {
+      case 'overview':
+      case 'home':
+        return { title: 'AI 网关指挥中心' };
+      case 'api':
+        return { title: 'API 接入配置' };
+      case 'providers':
+        return { title: '供应商集群管理' };
+      case 'routes':
+        return { title: '路由转发配置' };
+      case 'models':
+        return { title: '模型清单列表' };
+      case 'model-mapping':
+        return { title: '模型别名映射' };
+      case 'playground':
+        return { title: '极速模型调试舱' };
+      case 'logs':
+      case 'traffic':
+      case 'errors':
+        return { title: '全量调用日志与用量统计' };
+      case 'api-keys':
+        return { title: 'API 密钥凭据管理' };
+      case 'oauth':
+        return { title: 'OAuth 授权凭据' };
+      case 'permissions':
+        return { title: '安全访问权限' };
+      case 'smart-config':
+        return { title: '智能体一键托管' };
+      case 'config':
+        return { title: '高级核心设置' };
+      case 'versions':
+        return { title: '版本与组件更新' };
+      case 'usage-records':
+        return { title: '用量与配额账单' };
+      default:
+        return { title: 'EasyCLIProxyAPI', subtitle: 'AI 网关 · 开发者控制台' };
+    }
+  }, [active]);
+
+  // 渲染当前页面视图
+  const renderCurrentView = () => {
+    switch (active) {
+      case 'overview':
+      case 'home':
+        return <CommandCenterPage onNavigate={select} />;
+      case 'api':
+        return <ApiAccessPage />;
+      case 'providers':
+        return <ProvidersPage />;
+      case 'routes':
+      case 'model-mapping':
+        return <ThinkingAliasesPage />;
+      case 'models':
+        return <ApiAccessPage />;
+      case 'playground':
+        return <PlaygroundPage />;
+      case 'logs':
+      case 'traffic':
+      case 'errors':
+      case 'usage-records':
+        return <UsageRecordsPage />;
+      case 'api-keys':
+        return <ApiKeysPage />;
+      case 'oauth':
+        return <OAuthManagementPage />;
+      case 'permissions':
+        return <ConfigPanelPage />;
+      case 'smart-config':
+        return <AgentsPage />;
+      case 'config':
+        return <ConfigPanelPage />;
+      case 'versions':
+        return <VersionManagementPage />;
+      case 'easy':
+        return (
+          <EasyModePage
+            onExit={() => select('overview')}
+            theme={theme}
+            setTheme={setTheme}
+            locale={locale}
+            setLocale={setLocale}
+          />
+        );
+      default:
+        return <CommandCenterPage onNavigate={select} />;
+    }
+  };
+
   return (
     <>
-      <div className={`app-shell${active === "easy" ? " app-shell-easy-mode" : ""}`}>
-        {active !== "easy" ? (
-          <aside className="sidebar">
-          <div className="sidebar-brand" title={t('app.desktopConsole')}>
-            <img src={appLogo} alt="" className="brand-mark brand-logo" width={36} height={36} />
-            <div>
-              <strong>EasyCLIProxyAPI</strong>
-              <span>{t('app.desktopConsole')}</span>
-            </div>
-          </div>
-
-          <nav className="nav-section" aria-label={t('app.navigation')}>
-            {pages.filter((page) => page.id !== 'easy').map((page) => {
-              const Icon = page.icon;
-              const locked = !canOpenAppPage(page.id, coreRunning);
-              const updateIndicator = page.id === 'versions'
-                ? appUpdateIndicatorState(hasUpdate, coreHasUpdate, appUpdateProcessing)
-                : null;
-              return (
-                <button
-                  key={page.id}
-                  type="button"
-                  className={[
-                    page.id === active ? 'active' : '',
-                    locked ? 'locked' : '',
-                  ]
-                    .filter(Boolean)
-                    .join(' ')}
-                  disabled={locked}
-                  title={locked ? t('app.nav.lockedHint') : undefined}
-                  onClick={() => select(page.id)}
-                >
-                  <Icon size={17} aria-hidden="true" />
-                  <span>{t(page.labelKey)}</span>
-                  {locked ? (
-                    <Lock size={13} className="nav-lock-icon" aria-hidden="true" />
-                  ) : updateIndicator ? (
-                    <i
-                      className={`nav-update-indicator ${updateIndicator}`}
-                      title={updateIndicator === 'processing'
-                        ? t('appUpdate.progressTitle')
-                        : availableUpdateLabel}
-                      aria-label={updateIndicator === 'processing'
-                        ? t('appUpdate.progressTitle')
-                        : availableUpdateLabel}
-                    />
-                  ) : null}
-                </button>
-              );
-            })}
-          </nav>
-
-          <div className="sidebar-bottom">
-            <div
-              className="sidebar-theme-selector"
-              role="group"
-              aria-label={t('app.theme.label')}
-            >
-              <button
-                type="button"
-                className={theme === 'light' ? 'active' : ''}
-                aria-pressed={theme === 'light'}
-                title={t('app.theme.switchToLight')}
-                onClick={() => setTheme('light')}
-              >
-                {t('app.theme.light')}
-              </button>
-              <button
-                type="button"
-                className={theme === 'dark' ? 'active' : ''}
-                aria-pressed={theme === 'dark'}
-                title={t('app.theme.switchToDark')}
-                onClick={() => setTheme('dark')}
-              >
-                {t('app.theme.dark')}
-              </button>
-              <button
-                type="button"
-                className={theme === 'system' ? 'active' : ''}
-                aria-pressed={theme === 'system'}
-                title={t('app.theme.switchToSystem')}
-                onClick={() => setTheme('system')}
-              >
-                {t('app.theme.system')}
-              </button>
-            </div>
-            <button
-              type="button"
-              className="sidebar-contact"
-              title={t('app.contact.title')}
-              onClick={() => void openContact()}
-            >
-              <MessageCircle size={16} aria-hidden="true" />
-              <span>{t('app.contact.label')}</span>
-              <ExternalLink size={13} aria-hidden="true" />
-            </button>
-          </div>
-          </aside>
+      <div className="console-shell">
+        {active !== 'easy' ? (
+          <ConsoleSidebar
+            activeId={active}
+            onSelect={select}
+            coreRunning={coreRunning}
+            corePort={corePort}
+          />
         ) : null}
 
-        <div className="workspace">
+        <div className="console-workspace">
           {active !== 'easy' ? (
-            <header className="apple-toolbar">
-              <div className="apple-toolbar-title-group">
-                <span className="apple-toolbar-title">{t(activePage.labelKey)}</span>
-                <span className="apple-toolbar-badge">EasyCLIProxyAPI</span>
-              </div>
-              <div className="apple-toolbar-actions">
-                <button
-                  type="button"
-                  className="toolbar-cmd-trigger"
-                  onClick={() => setCmdPaletteOpen(true)}
-                  title={t('commandPalette.triggerTip')}
-                >
-                  <Search size={13} aria-hidden="true" />
-                  <span>{t('commandPalette.placeholder').split('(')[0].trim()}</span>
-                  <span className="cmd-kbd-badge">Ctrl+K</span>
-                </button>
-                <span className={`state-pill ${coreRunning ? 'success' : 'neutral'}`}>
-                  <span className={`status-beacon-dot ${coreRunning ? 'running' : 'stopped'}`} aria-hidden="true" />
-                  <span>{coreRunning ? t('kernel.status.running') : t('kernel.control.notRunning')}</span>
-                </span>
-              </div>
-            </header>
+            <ConsoleHeader
+              pageTitle={pageMeta.title}
+              pageSubtitle={pageMeta.subtitle}
+              onOpenSearch={() => setCmdPaletteOpen(true)}
+              coreRunning={coreRunning}
+              themePreference={theme}
+              onThemeChange={setTheme}
+              onOpenContact={() => void openContact()}
+            />
           ) : null}
-          <main className="content">
-            {isAlwaysAvailablePage(activePage.id) || coreRunning ? (
-              activePage.id === 'easy' ? (
-                <EasyModePage
-                  onExit={() => select('home')}
-                  theme={theme}
-                  setTheme={setTheme}
-                  locale={locale}
-                  setLocale={setLocale}
-                />
-              ) : (
-                <ActivePage />
-              )
+
+          <main className="console-main-content">
+            {isAlwaysAvailablePage(active) || coreRunning ? (
+              renderCurrentView()
             ) : (
               <CoreLockedPage />
             )}
@@ -467,6 +380,22 @@ function AppContent() {
         </div>
       </div>
 
+      {/* 命令面板 Ctrl+K */}
+      <CommandPalette
+        isOpen={cmdPaletteOpen}
+        onClose={() => setCmdPaletteOpen(false)}
+        onNavigate={(pageId) => {
+          select(pageId);
+          setCmdPaletteOpen(false);
+        }}
+        onRunCoreCommand={handleRunCoreCommand}
+        coreRunning={coreRunning}
+        onCopyApiUrl={handleCopyApiUrl}
+        currentTheme={theme}
+        onSetTheme={setTheme}
+      />
+
+      {/* Windows 关闭确认弹窗 */}
       {windowsClosePrompt ? (
         <div className="close-dialog-backdrop">
           <section
@@ -496,11 +425,16 @@ function AppContent() {
             <div className="close-dialog-heading">
               <h2 id="close-dialog-title">{t('app.close.title')}</h2>
             </div>
-            <p id="close-dialog-description">
-              {t('app.close.description')}
-            </p>
+            <p id="close-dialog-description">{t('app.close.description')}</p>
             {windowsClosePrompt.error ? (
-              <MessageNotice message={windowsClosePrompt.error} onDismiss={() => setWindowsClosePrompt(current => current ? { ...current, error: null } : current)} />
+              <MessageNotice
+                message={windowsClosePrompt.error}
+                onDismiss={() =>
+                  setWindowsClosePrompt((current) =>
+                    current ? { ...current, error: null } : current
+                  )
+                }
+              />
             ) : null}
             <label className="close-dialog-remember">
               <input
@@ -510,7 +444,7 @@ function AppContent() {
                 onChange={(event) => {
                   const rememberChoice = event.currentTarget.checked;
                   setWindowsClosePrompt((current) =>
-                    current ? { ...current, rememberChoice } : current,
+                    current ? { ...current, rememberChoice } : current
                   );
                 }}
               />
@@ -545,18 +479,6 @@ function AppContent() {
           </section>
         </div>
       ) : null}
-
-      <AppUpdateDialog />
-      <CommandPalette
-        isOpen={cmdPaletteOpen}
-        onClose={() => setCmdPaletteOpen(false)}
-        onNavigate={(pageId) => select(pageId as PageId)}
-        onRunCoreCommand={handleRunCoreCommand}
-        coreRunning={coreRunning}
-        onCopyApiUrl={handleCopyApiUrl}
-        currentTheme={theme}
-        onSetTheme={setTheme}
-      />
     </>
   );
 }

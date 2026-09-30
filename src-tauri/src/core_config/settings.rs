@@ -276,6 +276,65 @@ pub(crate) fn merge_core_config_fields(
     merge_core_config_value(template, current_value)
 }
 
+fn migrate_legacy_v7_fields_to_v8(
+    template_merged: &mut serde_norway::Value,
+    current: &serde_norway::Value,
+) {
+    let Some(template_map) = template_merged.as_mapping() else {
+        return;
+    };
+    let has_management = nested_yaml_value(template_map, &["management"]).is_some();
+    let has_oauth = nested_yaml_value(template_map, &["oauth"]).is_some();
+    let has_server = nested_yaml_value(template_map, &["server"]).is_some();
+    let has_access = nested_yaml_value(template_map, &["access"]).is_some();
+
+    let Some(current_map) = current.as_mapping() else {
+        return;
+    };
+
+    let secret = if has_management {
+        nested_yaml_value(current_map, &["remote-management", "secret-key"]).cloned()
+    } else {
+        None
+    };
+    let auth_dir = if has_oauth {
+        yaml_mapping_value(current_map, "auth-dir").cloned()
+    } else {
+        None
+    };
+    let port = if has_server {
+        yaml_mapping_value(current_map, "port").cloned()
+    } else {
+        None
+    };
+    let host = if has_server {
+        yaml_mapping_value(current_map, "host").cloned()
+    } else {
+        None
+    };
+    let keys = if has_access {
+        yaml_mapping_value(current_map, "api-keys").cloned()
+    } else {
+        None
+    };
+
+    if let Some(secret) = secret {
+        let _ = set_core_yaml_nested_value(template_merged, "management", "secret-key", secret);
+    }
+    if let Some(auth_dir) = auth_dir {
+        let _ = set_core_yaml_nested_value(template_merged, "oauth", "auth-dir", auth_dir);
+    }
+    if let Some(port) = port {
+        let _ = set_core_yaml_nested_value(template_merged, "server", "port", port);
+    }
+    if let Some(host) = host {
+        let _ = set_core_yaml_nested_value(template_merged, "server", "host", host);
+    }
+    if let Some(keys) = keys {
+        let _ = set_core_yaml_nested_value(template_merged, "access", "api-keys", keys);
+    }
+}
+
 pub(crate) fn merge_core_config_value(
     template: &str,
     current: Option<serde_norway::Value>,
@@ -288,6 +347,7 @@ pub(crate) fn merge_core_config_value(
     let mut merged = template_value.clone();
 
     if let Some(current) = current {
+        migrate_legacy_v7_fields_to_v8(&mut merged, &current);
         merge_yaml_values(&mut merged, current);
     }
 
@@ -489,22 +549,57 @@ pub(crate) fn apply_gui_managed_settings(
     let host = config.host.trim();
     let updated = patch_core_yaml_document(content, |document| {
         let mut changed = false;
-        changed |= set_core_yaml_top_level_value(
-            document,
-            "host",
-            serde_norway::Value::String(host.to_string()),
-        )?;
-        changed |= set_core_yaml_top_level_value(
-            document,
-            "port",
-            serde_norway::to_value(config.port)
-                .map_err(|err| format!("序列化内核端口失败: {err}"))?,
-        )?;
-        changed |= set_core_yaml_top_level_value(
-            document,
-            "auth-dir",
-            serde_norway::Value::String(config.auth_dir.clone()),
-        )?;
+        let is_v8_server = document
+            .as_mapping()
+            .and_then(|m| nested_yaml_value(m, &["server"]))
+            .is_some();
+        if is_v8_server {
+            changed |= set_core_yaml_nested_value(
+                document,
+                "server",
+                "host",
+                serde_norway::Value::String(host.to_string()),
+            )?;
+            changed |= set_core_yaml_nested_value(
+                document,
+                "server",
+                "port",
+                serde_norway::to_value(config.port)
+                    .map_err(|err| format!("序列化内核端口失败: {err}"))?,
+            )?;
+        } else {
+            changed |= set_core_yaml_top_level_value(
+                document,
+                "host",
+                serde_norway::Value::String(host.to_string()),
+            )?;
+            changed |= set_core_yaml_top_level_value(
+                document,
+                "port",
+                serde_norway::to_value(config.port)
+                    .map_err(|err| format!("序列化内核端口失败: {err}"))?,
+            )?;
+        }
+
+        let is_v8_oauth = document
+            .as_mapping()
+            .and_then(|m| nested_yaml_value(m, &["oauth"]))
+            .is_some();
+        if is_v8_oauth {
+            changed |= set_core_yaml_nested_value(
+                document,
+                "oauth",
+                "auth-dir",
+                serde_norway::Value::String(config.auth_dir.clone()),
+            )?;
+        } else {
+            changed |= set_core_yaml_top_level_value(
+                document,
+                "auth-dir",
+                serde_norway::Value::String(config.auth_dir.clone()),
+            )?;
+        }
+
         changed |= set_core_yaml_top_level_value(
             document,
             "debug",
@@ -548,12 +643,26 @@ pub(crate) fn apply_gui_managed_settings(
             "request-log",
             serde_norway::Value::Bool(config.request_log),
         )?;
-        changed |= set_core_yaml_nested_value(
-            document,
-            "remote-management",
-            "secret-key",
-            serde_norway::Value::String(config.management_secret_key.clone()),
-        )?;
+
+        let is_v8_management = document
+            .as_mapping()
+            .and_then(|m| nested_yaml_value(m, &["management"]))
+            .is_some();
+        if is_v8_management {
+            changed |= set_core_yaml_nested_value(
+                document,
+                "management",
+                "secret-key",
+                serde_norway::Value::String(config.management_secret_key.clone()),
+            )?;
+        } else {
+            changed |= set_core_yaml_nested_value(
+                document,
+                "remote-management",
+                "secret-key",
+                serde_norway::Value::String(config.management_secret_key.clone()),
+            )?;
+        }
         changed |= set_core_yaml_nested_value(
             document,
             "plugins",
@@ -1579,6 +1688,7 @@ pub(crate) fn sanitize_gui_config(config: &mut GuiConfigFile) -> Result<bool, St
     }
     let legacy_default_auth_dir = fixed_oauth_dir()?;
     if config.auth_dir.trim().is_empty()
+        || config.auth_dir.trim() == OAUTH_DIR_NAME
         || Path::new(config.auth_dir.trim()) == legacy_default_auth_dir
     {
         config.auth_dir = DEFAULT_AUTH_DIR.to_string();

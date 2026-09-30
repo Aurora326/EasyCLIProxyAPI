@@ -1320,8 +1320,6 @@ export function ConfigPanelPage() {
             </div>
           </div>
 
-          <p className="config-diagnostics-intro">{t('config.diagnostics.description')}</p>
-
           <div className="config-diagnostics-toggle-grid">
             <div className="config-diagnostics-setting">
               <span className="config-diagnostics-setting-icon" aria-hidden="true"><Bug size={18} /></span>

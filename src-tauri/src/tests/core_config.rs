@@ -1279,3 +1279,86 @@ fn startup_merge_can_shrink_template_api_key_sequence() {
         config.management_secret_key
     );
 }
+
+#[test]
+fn v8_config_layout_support_and_legacy_migration() {
+    let v8_template = r#"server:
+  host: ""
+  port: 8317
+management:
+  secret-key: ""
+oauth:
+  auth-dir: "~/.cli-proxy-api"
+access:
+  api-keys:
+    - "your-api-key-1"
+debug: false
+plugins:
+  enabled: false
+routing:
+  strategy: round-robin
+"#;
+    let v7_current = r#"host: 127.0.0.1
+port: 8317
+remote-management:
+  secret-key: my-old-secret
+auth-dir: ../oauth
+api-keys:
+  - '123456'
+debug: false
+plugins:
+  enabled: false
+routing:
+  strategy: round-robin
+"#;
+
+    let config = GuiConfigFile {
+        host: "127.0.0.1".to_string(),
+        port: 8317,
+        auth_dir: "../oauth".to_string(),
+        management_secret_key: "gui-managed-secret".to_string(),
+        ..GuiConfigFile::default()
+    };
+
+    let migrated = merge_core_config_fields(v8_template, Some(v7_current)).unwrap();
+    let merged = merge_core_config_yaml(v8_template, Some(&migrated), &config).unwrap();
+    let document = serde_norway::from_str::<serde_norway::Value>(&merged).unwrap();
+
+    assert_eq!(document["server"]["port"], 8317);
+    assert_eq!(document["server"]["host"], "127.0.0.1");
+    assert_eq!(document["management"]["secret-key"], "gui-managed-secret");
+    assert_eq!(document["oauth"]["auth-dir"], "../oauth");
+
+    let settings = core_config_settings_from_value(&document).unwrap();
+    assert_eq!(settings.port, 8317);
+    assert_eq!(settings.host, "127.0.0.1");
+    assert_eq!(settings.auth_dir, "../oauth");
+    assert_eq!(settings.management_secret_key.as_deref(), Some("gui-managed-secret"));
+}
+
+#[test]
+fn core_config_reads_and_patches_nested_usage_settings() {
+    let yaml = r#"
+usage:
+  usage-statistics-enabled: false
+  redis-usage-queue-retention-seconds: 60
+"#;
+    let mut document: serde_norway::Value = serde_norway::from_str(yaml).unwrap();
+    let settings = core_config_settings_from_value(&document).unwrap();
+    assert!(!settings.usage_statistics_enabled);
+    assert_eq!(settings.redis_usage_queue_retention_seconds, 60);
+
+    let mut next_settings = settings;
+    next_settings.usage_statistics_enabled = true;
+    next_settings.redis_usage_queue_retention_seconds = 180;
+
+    patch_core_logging_settings_document(&mut document, &next_settings).unwrap();
+    assert_eq!(document["usage"]["usage-statistics-enabled"], true);
+    assert_eq!(document["usage"]["redis-usage-queue-retention-seconds"], 180);
+
+    let reloaded = core_config_settings_from_value(&document).unwrap();
+    assert!(reloaded.usage_statistics_enabled);
+    assert_eq!(reloaded.redis_usage_queue_retention_seconds, 180);
+}
+
+

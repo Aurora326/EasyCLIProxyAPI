@@ -430,7 +430,7 @@ export function PlaygroundPage() {
           </div>
           <div>
             <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--clean-text-secondary)', display: 'block', marginBottom: 4 }}>
-              系统提示词 (System Prompt)
+              系统提示词
             </label>
             <input
               type="text"
@@ -584,7 +584,7 @@ export function PlaygroundPage() {
                   >
                     <span style={{ fontWeight: 600, color: 'var(--clean-primary)', display: 'flex', alignItems: 'center', gap: 4 }}>
                       <Sparkles size={12} />
-                      思考链过程 (Thinking Process)
+                      深度思考过程
                     </span>
                     {expandedReasoning[m.id] ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
                   </div>

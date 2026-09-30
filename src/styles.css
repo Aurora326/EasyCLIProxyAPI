@@ -404,15 +404,15 @@
 
 :root {
   /* Shared typography scale for captions, controls, headings, and metrics. */
-  --font-size-caption: 12px;
-  --font-size-meta: 13px;
-  --font-size-label: 14px;
-  --font-size-body: 15px;
-  --font-size-section: 16px;
-  --font-size-panel-title: 18px;
-  --font-size-dialog-title: 20px;
-  --font-size-metric-compact: 26px;
-  --font-size-display: 28px;
+  --font-size-caption: 11px;
+  --font-size-meta: 11.5px;
+  --font-size-label: 12px;
+  --font-size-body: 12.5px;
+  --font-size-section: 13.5px;
+  --font-size-panel-title: 13.5px;
+  --font-size-dialog-title: 14.5px;
+  --font-size-metric-compact: 20px;
+  --font-size-display: 15px;
   --line-height-tight: 1.25;
   --line-height-body: 1.5;
   --line-height-relaxed: 1.6;
@@ -3257,9 +3257,10 @@ textarea:focus-visible {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 18px;
+  gap: 12px;
   min-width: 0;
-  min-height: 54px;
+  min-height: 38px;
+  margin-bottom: 12px;
 }
 
 .management-header > div {
@@ -3281,8 +3282,9 @@ textarea:focus-visible {
 .management-header h1 {
   margin: 0;
   overflow: hidden;
-  color: var(--theme-2d2a26);
-  font-size: var(--font-size-display);
+  color: var(--text-primary);
+  font-size: 14.5px;
+  font-weight: 600;
   line-height: var(--line-height-tight);
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -7705,11 +7707,13 @@ textarea:focus-visible {
   overflow: hidden;
 }
 
+.console-shell:has(.usage-records-page),
 .app-shell:has(.usage-records-page) {
   height: 100%;
   min-height: 100%;
 }
 
+.console-shell:has(.usage-records-page) .console-workspace,
 .app-shell:has(.usage-records-page) .workspace {
   display: flex;
   min-height: 0;
@@ -7717,12 +7721,14 @@ textarea:focus-visible {
   flex-direction: column;
 }
 
+.console-shell:has(.usage-records-page) .console-main-content,
 .app-shell:has(.usage-records-page) .content {
   display: flex;
   min-height: 0;
   flex: 1 1 auto;
   flex-direction: column;
   overflow: hidden;
+  padding: 16px 20px 16px 20px;
 }
 
 .usage-records-page > .usage-overview-layout,
@@ -7742,6 +7748,7 @@ textarea:focus-visible {
   gap: 12px;
   min-width: 0;
   flex-wrap: wrap;
+  flex-shrink: 0;
 }
 
 .usage-topbar-actions {
@@ -7873,6 +7880,7 @@ textarea:focus-visible {
   border: 1px solid var(--border-color);
   border-radius: 12px;
   background: var(--bg-primary);
+  flex-shrink: 0;
 }
 
 .usage-filter-row {
@@ -8031,7 +8039,7 @@ textarea:focus-visible {
 
 .usage-stat-card-value {
   color: var(--theme-2d2a26);
-  font-size: 22px;
+  font-size: 20px;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
   line-height: 1.15;
@@ -8568,6 +8576,7 @@ textarea:focus-visible {
   color: var(--theme-8a847c);
   font-size: var(--font-size-caption);
   flex-wrap: wrap;
+  flex-shrink: 0;
 }
 
 .usage-events-summary-left {
@@ -8923,23 +8932,39 @@ textarea:focus-visible {
   overflow-x: auto;
   overflow-y: auto;
   flex: 1 1 auto;
-  min-height: 240px;
+  min-height: 0;
   height: auto;
   border: 0;
   border-radius: 0;
   background: var(--theme-fffdf8);
-  overscroll-behavior: contain;
+  overscroll-behavior: auto;
   scrollbar-gutter: stable;
+  scrollbar-width: thin;
+  scrollbar-color: var(--clean-border, rgba(140, 140, 140, 0.35)) transparent;
 }
 
-/* Hide horizontal scrollbar on the table wrap so only the top scrollbar is shown */
+/* Hide horizontal scrollbar on the table wrap so only the top scrollbar is shown; format vertical scrollbar */
 .usage-table-wrap::-webkit-scrollbar {
+  width: 6px;
   height: 0;
 }
 
 .usage-table-wrap::-webkit-scrollbar:horizontal {
   display: none;
   height: 0;
+}
+
+.usage-table-wrap::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.usage-table-wrap::-webkit-scrollbar-thumb {
+  background-color: var(--clean-border, rgba(140, 140, 140, 0.35));
+  border-radius: 9999px;
+}
+
+.usage-table-wrap::-webkit-scrollbar-thumb:hover {
+  background-color: var(--clean-text-muted, rgba(100, 100, 100, 0.6));
 }
 
 .usage-events-table {
@@ -9240,7 +9265,7 @@ body.table-col-resizing * {
 
 .usage-data-management-heading h2 {
   margin: 0;
-  font-size: 18px;
+  font-size: 14px;
 }
 
 .usage-data-management-heading p,
@@ -9327,7 +9352,7 @@ body.table-col-resizing * {
 
 .usage-pricing-summary strong {
   color: var(--theme-2d2a26);
-  font-size: 20px;
+  font-size: 15px;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
 }
@@ -10532,11 +10557,13 @@ body.table-col-resizing * {
 }
 
 @media (max-width: 760px) {
+  .console-shell:has(.usage-records-page),
   .app-shell:has(.usage-records-page) {
     height: auto;
     min-height: 100%;
   }
 
+  .console-shell:has(.usage-records-page) .console-main-content,
   .app-shell:has(.usage-records-page) .content {
     overflow: visible;
   }
@@ -11260,7 +11287,7 @@ body.table-col-resizing * {
 .easy-mode-hero h1 {
   margin: 8px 0 7px;
   color: var(--theme-2d2a26);
-  font-size: clamp(26px, 3vw, 36px);
+  font-size: 16px;
   line-height: 1.12;
 }
 
@@ -12366,7 +12393,7 @@ body.table-col-resizing * {
 }
 
 .simple-mode-task-heading h2 {
-  font-size: clamp(20px, 2.2vw, 24px);
+  font-size: 14px;
   line-height: 1.2;
 }
 
@@ -12918,7 +12945,7 @@ body.table-col-resizing * {
   margin: 0;
   overflow: hidden;
   color: var(--theme-2d2a26);
-  font-size: 18px;
+  font-size: 13.5px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -13181,7 +13208,7 @@ body.table-col-resizing * {
 }
 
 .simple-mode-task-heading h2 {
-  font-size: 21px;
+  font-size: 14px;
 }
 
 .simple-mode-task-heading p {
