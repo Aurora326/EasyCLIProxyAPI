@@ -73,7 +73,8 @@ type RecentRequestItem = {
 };
 
 const resolveProviderInfo = (providerRaw: string, modelRaw: string) => {
-  const p = (providerRaw || '').toLowerCase();
+  const raw = (providerRaw || '').trim();
+  const p = raw.toLowerCase();
   const m = (modelRaw || '').toLowerCase();
   if (p.includes('antigravity') || m.includes('antigravity')) return { name: 'Antigravity', icon: antigravityIcon };
   if (p.includes('claude') || p.includes('anthropic') || m.includes('claude')) return { name: 'Claude', icon: claudeIcon };
@@ -83,7 +84,14 @@ const resolveProviderInfo = (providerRaw: string, modelRaw: string) => {
   if (p.includes('grok') || p.includes('xai') || m.includes('grok')) return { name: 'Grok', icon: grokIcon };
   if (p.includes('kimi') || p.includes('moonshot') || m.includes('kimi')) return { name: 'Kimi', icon: kimiIcon };
   if (p.includes('codex')) return { name: 'Codex', icon: codexIcon };
-  return { name: providerRaw || 'API', icon: null };
+  if (/^https?:\/\//i.test(raw)) {
+    try {
+      return { name: new URL(raw).host, icon: openaiIcon };
+    } catch {
+      return { name: raw.replace(/^https?:\/\//i, '').split('/')[0] || raw, icon: openaiIcon };
+    }
+  }
+  return { name: raw || 'API', icon: null };
 };
 
 const parseEndpoint = (endpointRaw: string) => {
@@ -185,51 +193,103 @@ export function CommandCenterPage({ onNavigate }: CommandCenterPageProps) {
     }
   };
 
-  // 流量图表数据集：包含具体每时间段请求数与实时 QPS
-  const trafficDataMap: Record<TimeRange, TrafficDataPoint[]> = {
-    '1h': [
-      { t: '14:00', total: 120, ok: 119, err: 1, qps: 0.13 },
-      { t: '14:12', total: 240, ok: 238, err: 2, qps: 0.27 },
-      { t: '14:24', total: 480, ok: 479, err: 1, qps: 0.53 },
-      { t: '14:36', total: 360, ok: 358, err: 2, qps: 0.40 },
-      { t: '14:48', total: 520, ok: 518, err: 2, qps: 0.58 },
-      { t: '15:00', total: 610, ok: 608, err: 2, qps: 0.68 },
-    ],
-    '24h': [
-      { t: '00:00', total: 840, ok: 839, err: 1, qps: 0.23 },
-      { t: '04:00', total: 320, ok: 320, err: 0, qps: 0.09 },
-      { t: '08:00', total: 1420, ok: 1416, err: 4, qps: 0.39 },
-      { t: '12:00', total: 2890, ok: 2884, err: 6, qps: 0.80 },
-      { t: '16:00', total: 3120, ok: 3115, err: 5, qps: 0.87 },
-      { t: '20:00', total: 2150, ok: 2146, err: 4, qps: 0.60 },
-      { t: '23:59', total: 1280, ok: 1278, err: 2, qps: 0.36 },
-    ],
-    '7d': [
-      { t: '周一', total: 18400, ok: 18380, err: 20, qps: 0.21 },
-      { t: '周二', total: 21200, ok: 21175, err: 25, qps: 0.25 },
-      { t: '周三', total: 24821, ok: 24791, err: 30, qps: 0.29 },
-      { t: '周四', total: 22100, ok: 22080, err: 20, qps: 0.26 },
-      { t: '周五', total: 26300, ok: 26270, err: 30, qps: 0.31 },
-      { t: '周六', total: 14200, ok: 14185, err: 15, qps: 0.16 },
-      { t: '周日', total: 12800, ok: 12790, err: 10, qps: 0.15 },
-    ],
-    '30d': [
-      { t: '第1周', total: 95000, ok: 94890, err: 110, qps: 0.16 },
-      { t: '第2周', total: 112000, ok: 111850, err: 150, qps: 0.19 },
-      { t: '第3周', total: 128000, ok: 127820, err: 180, qps: 0.21 },
-      { t: '第4周', total: 145000, ok: 144810, err: 190, qps: 0.24 },
-    ],
-  };
+  // 真实统计概览与渠道状态
+  const [usageStats, setUsageStats] = useState<{
+    totalRequests: number;
+    successCount: number;
+    failureCount: number;
+    successRate: number;
+    averageLatencyMs: number;
+    totalTokens: number;
+    timeline: Array<{
+      hour: string;
+      requests: number;
+      success: number;
+      failure: number;
+      tokens: number;
+    }>;
+  }>({
+    totalRequests: 0,
+    successCount: 0,
+    failureCount: 0,
+    successRate: 100,
+    averageLatencyMs: 0,
+    totalTokens: 0,
+    timeline: [],
+  });
 
-  const currentPoints = trafficDataMap[timeRange];
+  const [activeProviders, setActiveProviders] = useState<
+    Array<{
+      key: string;
+      name: string;
+      icon: string | null;
+      modelCount: number;
+    }>
+  >([]);
 
-  // 计算 Y 轴刻度基准（整千或整百取整，便于用户清晰理解数值）
-  const rawMax = Math.max(...currentPoints.map((p) => p.total));
+  // 将真实 timeline 转换为折线图坐标点（若暂无历史记录则生成当前时间轴 0 基线）
+  const currentPoints = useMemo<TrafficDataPoint[]>(() => {
+    const rawTimeline = usageStats.timeline || [];
+    if (rawTimeline.length >= 2) {
+      const sliced = rawTimeline.slice(-12);
+      return sliced.map((pt) => {
+        const d = new Date(pt.hour);
+        const pad = (n: number) => (n < 10 ? '0' + n : String(n));
+        const label = Number.isNaN(d.getTime())
+          ? pt.hour.slice(-5)
+          : timeRange === '7d' || timeRange === '30d'
+            ? `${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+            : `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+        return {
+          t: label,
+          total: pt.requests || 0,
+          ok: pt.success || 0,
+          err: pt.failure || 0,
+          qps: Number(((pt.requests || 0) / 3600).toFixed(2)),
+        };
+      });
+    }
+
+    // 当只有 0 或 1 个点时，构建 6 个时间刻度点展示真实值
+    const now = new Date();
+    const pad = (n: number) => (n < 10 ? '0' + n : String(n));
+    const single = rawTimeline[0];
+    const points: TrafficDataPoint[] = [];
+    for (let i = 5; i >= 0; i--) {
+      const tDate = new Date(
+        now.getTime() -
+          i * (timeRange === '1h' ? 10 * 60 * 1000 : timeRange === '24h' ? 4 * 3600 * 1000 : 24 * 3600 * 1000),
+      );
+      const label =
+        timeRange === '7d' || timeRange === '30d'
+          ? `${pad(tDate.getMonth() + 1)}-${pad(tDate.getDate())}`
+          : `${pad(tDate.getHours())}:${pad(tDate.getMinutes())}`;
+      if (i === 0 && single) {
+        points.push({
+          t: label,
+          total: single.requests || 0,
+          ok: single.success || 0,
+          err: single.failure || 0,
+          qps: Number(((single.requests || 0) / 3600).toFixed(2)),
+        });
+      } else {
+        points.push({ t: label, total: 0, ok: 0, err: 0, qps: 0 });
+      }
+    }
+    return points;
+  }, [usageStats.timeline, timeRange]);
+
+  // 计算 Y 轴刻度基准（自适应真实请求量级）
+  const rawMax = Math.max(...currentPoints.map((p) => p.total), 0);
   const niceMax = useMemo(() => {
+    if (rawMax <= 10) return 10;
+    if (rawMax <= 50) return 50;
+    if (rawMax <= 100) return 100;
+    if (rawMax <= 500) return 500;
     if (rawMax <= 1000) return 1000;
-    if (rawMax <= 4000) return 4000;
+    if (rawMax <= 5000) return 5000;
     if (rawMax <= 30000) return 30000;
-    return 160000;
+    return Math.ceil(rawMax / 10000) * 10000;
   }, [rawMax]);
 
   // SVG 坐标系尺寸与留白
@@ -243,7 +303,7 @@ export function CommandCenterPage({ onNavigate }: CommandCenterPageProps) {
   const chartInnerWidth = svgWidth - padLeft - padRight;
   const chartInnerHeight = svgHeight - padTop - padBottom;
 
-  const getX = (i: number) => padLeft + (i / (currentPoints.length - 1)) * chartInnerWidth;
+  const getX = (i: number) => padLeft + (i / Math.max(1, currentPoints.length - 1)) * chartInnerWidth;
   const getY = (val: number) => padTop + chartInnerHeight - (val / niceMax) * chartInnerHeight;
 
   // 生成折线与渐变面积路径
@@ -258,84 +318,150 @@ export function CommandCenterPage({ onNavigate }: CommandCenterPageProps) {
     .join(' ');
 
   // 失败异常放大显示（使得微小错误也能被直观捕捉）
-  const errMaxScale = niceMax * 0.25;
+  const errMaxScale = Math.max(1, niceMax * 0.25);
   const getErrY = (errVal: number) =>
-    padTop + chartInnerHeight - Math.min(chartInnerHeight * 0.9, (errVal / Math.max(1, errMaxScale)) * chartInnerHeight);
+    padTop + chartInnerHeight - Math.min(chartInnerHeight * 0.9, (errVal / errMaxScale) * chartInnerHeight);
 
   const errorLinePath = currentPoints
-    .map((p, i) => `${i === 0 ? 'M' : 'L'} ${getX(i)} ${getErrY(p.err * 10)}`)
+    .map((p, i) => `${i === 0 ? 'M' : 'L'} ${getX(i)} ${getErrY(p.err)}`)
     .join(' ');
 
   // Y 轴刻度等级 (4 条参考线：0%, 33%, 66%, 100%)
   const yAxisTicks = useMemo(() => {
     return [
       { val: 0, label: '0' },
-      { val: Math.round(niceMax * 0.33), label: (niceMax * 0.33 >= 1000 ? `${Math.round(niceMax * 0.33 / 1000)}k` : `${Math.round(niceMax * 0.33)}`) },
-      { val: Math.round(niceMax * 0.66), label: (niceMax * 0.66 >= 1000 ? `${Math.round(niceMax * 0.66 / 1000)}k` : `${Math.round(niceMax * 0.66)}`) },
-      { val: niceMax, label: (niceMax >= 1000 ? `${Math.round(niceMax / 1000)}k` : `${niceMax}`) },
+      {
+        val: Math.round(niceMax * 0.33),
+        label:
+          niceMax * 0.33 >= 1000 ? `${(niceMax * 0.33 / 1000).toFixed(1)}k` : `${Math.round(niceMax * 0.33)}`,
+      },
+      {
+        val: Math.round(niceMax * 0.66),
+        label:
+          niceMax * 0.66 >= 1000 ? `${(niceMax * 0.66 / 1000).toFixed(1)}k` : `${Math.round(niceMax * 0.66)}`,
+      },
+      { val: niceMax, label: niceMax >= 1000 ? `${Math.round(niceMax / 1000)}k` : `${niceMax}` },
     ];
   }, [niceMax]);
 
-  // 动态读取真实请求记录流水
+  // 动态读取真实请求记录流水、KPI 概览与在线供应商
   const [recentRequests, setRecentRequests] = useState<RecentRequestItem[]>([]);
   const [recentLoading, setRecentLoading] = useState(true);
   const [isRefreshingLogs, setIsRefreshingLogs] = useState(false);
 
-  const fetchRecentRequests = useCallback(async (isManual = false) => {
-    if (!isTauri()) {
-      setRecentLoading(false);
-      return;
-    }
-    if (isManual) setIsRefreshingLogs(true);
-    try {
-      const res = await invoke<{ items: any[]; total: number }>('get_usage_events', {
-        query: { page: 1, page_size: 20 },
-      });
-      if (res && Array.isArray(res.items)) {
-        const mapped: RecentRequestItem[] = res.items.slice(0, 7).map((record) => {
-          const { method, path } = parseEndpoint(record.endpoint);
-          const { name: providerName, icon: providerIcon } = resolveProviderInfo(record.provider, record.model);
-          const status = record.canceled
-            ? 499
-            : record.failed
-              ? record.failure_status > 0
-                ? record.failure_status
-                : 500
-              : record.failure_status > 0
-                ? record.failure_status
-                : 200;
-          return {
-            id: record.request_id
-              ? record.request_id.length > 14
-                ? record.request_id.slice(0, 14) + '…'
-                : record.request_id
-              : record.id
-                ? record.id.slice(0, 10)
-                : 'req_—',
-            rawId: record.request_id || record.id || '',
-            time: formatRequestTime(record.timestamp),
-            provider: providerName,
-            icon: providerIcon || undefined,
-            model: record.alias || record.model || 'unknown',
-            endpoint: path,
-            method,
-            status,
-            isCanceled: Boolean(record.canceled),
-            isFailed: Boolean(record.failed),
-            latency: formatLatency(record.latency_ms),
-          };
-        });
-        setRecentRequests(mapped);
+  const fetchRecentRequests = useCallback(
+    async (isManual = false) => {
+      if (!isTauri()) {
+        setRecentLoading(false);
+        return;
       }
-    } catch (err) {
-      console.error('获取最近调用流水失败:', err);
-    } finally {
-      setRecentLoading(false);
-      if (isManual) {
-        setTimeout(() => setIsRefreshingLogs(false), 500);
+      if (isManual) setIsRefreshingLogs(true);
+      try {
+        const now = new Date();
+        const hours = timeRange === '1h' ? 1 : timeRange === '24h' ? 24 : timeRange === '7d' ? 24 * 7 : 24 * 30;
+        const rangeQuery = {
+          start: new Date(now.getTime() - hours * 3600 * 1000).toISOString(),
+          end: now.toISOString(),
+        };
+
+        const [res, overview, sources] = await Promise.all([
+          invoke<{ items: any[]; total: number }>('get_usage_events', {
+            query: { page: 1, page_size: 20 },
+          }).catch(() => null),
+          invoke<any>('get_usage_overview', { query: rangeQuery }).catch(() => null),
+          invoke<Array<{ model: string; provider: string; kind: string }>>('get_model_alias_sources').catch(() => []),
+        ]);
+
+        if (overview && typeof overview === 'object') {
+          setUsageStats({
+            totalRequests: Number(overview.totalRequests ?? 0),
+            successCount: Number(overview.successCount ?? 0),
+            failureCount: Number(overview.failureCount ?? 0),
+            successRate:
+              Number(overview.totalRequests ?? 0) > 0 ? Number(overview.successRate ?? 100) : 100,
+            averageLatencyMs: Number(overview.averageLatencyMs ?? 0),
+            totalTokens: Number(overview.totalTokens ?? 0),
+            timeline: Array.isArray(overview.timeline) ? overview.timeline : [],
+          });
+        }
+
+        if (Array.isArray(sources) && sources.length > 0) {
+          const grouped = new Map<string, { key: string; name: string; icon: string | null; models: Set<string> }>();
+          for (const src of sources) {
+            const info = resolveProviderInfo(src.provider || src.kind, src.model);
+            const groupKey = info.name.toLowerCase();
+            const existing = grouped.get(groupKey);
+            if (existing) {
+              if (src.model) existing.models.add(src.model);
+            } else {
+              grouped.set(groupKey, {
+                key: groupKey,
+                name: info.name,
+                icon: info.icon,
+                models: new Set(src.model ? [src.model] : []),
+              });
+            }
+          }
+          setActiveProviders(
+            Array.from(grouped.values()).map((g) => ({
+              key: g.key,
+              name: g.name,
+              icon: g.icon,
+              modelCount: g.models.size,
+            })),
+          );
+        }
+
+        if (res && Array.isArray(res.items)) {
+          const mapped: RecentRequestItem[] = res.items.slice(0, 7).map((record) => {
+            const { method, path } = parseEndpoint(record.endpoint);
+            const { name: providerName, icon: providerIcon } = resolveProviderInfo(
+              record.provider,
+              record.model,
+            );
+            const status = record.canceled
+              ? 499
+              : record.failed
+                ? record.failure_status > 0
+                  ? record.failure_status
+                  : 500
+                : record.failure_status > 0
+                  ? record.failure_status
+                  : 200;
+            return {
+              id: record.request_id
+                ? record.request_id.length > 14
+                  ? record.request_id.slice(0, 14) + '…'
+                  : record.request_id
+                : record.id
+                  ? record.id.slice(0, 10)
+                  : 'req_—',
+              rawId: record.request_id || record.id || '',
+              time: formatRequestTime(record.timestamp),
+              provider: providerName,
+              icon: providerIcon || undefined,
+              model: record.alias || record.model || 'unknown',
+              endpoint: path,
+              method,
+              status,
+              isCanceled: Boolean(record.canceled),
+              isFailed: Boolean(record.failed),
+              latency: formatLatency(record.latency_ms),
+            };
+          });
+          setRecentRequests(mapped);
+        }
+      } catch (err) {
+        console.error('获取最近调用流水与统计失败:', err);
+      } finally {
+        setRecentLoading(false);
+        if (isManual) {
+          setTimeout(() => setIsRefreshingLogs(false), 500);
+        }
       }
-    }
-  }, []);
+    },
+    [timeRange],
+  );
 
   useEffect(() => {
     void fetchRecentRequests();
@@ -364,25 +490,40 @@ export function CommandCenterPage({ onNavigate }: CommandCenterPageProps) {
 
   return (
     <div className="command-center-container">
-      {/* 1. Gateway Status Hero (网关指挥中心主横幅) */}
+      {/* 1. Gateway Status Hero (网关指挥中心主横幅：整合三大协议端点快捷复制) */}
       <section className="cc-hero-banner">
         <div className="cc-hero-left">
           <div className="cc-hero-status-box">
             <div className="cc-hero-status-row">
-              <span className="cc-hero-title">AI 代理网关</span>
+              <span className="cc-hero-title">本地多协议 AI 代理网关</span>
               <span className={`ds-badge ${coreRunning ? 'ds-badge-green' : 'ds-badge-red'}`}>
                 <span className={`status-pulse-dot ${coreRunning ? 'online' : 'offline'}`} />
-                {coreRunning ? '运行中' : '已停止'}
+                {coreRunning ? '引擎守护中' : '已停止'}
               </span>
+              <span className="ds-badge ds-badge-mono">客户端 {appVersion}</span>
             </div>
-            <div className="cc-hero-meta-row">
-              <span className="ds-endpoint">127.0.0.1:{listenPort}</span>
-              <span>·</span>
-              <span>{coreRunning ? '服务运行正常' : '服务未启动'}</span>
-              <span>·</span>
-              <span>高可用运行率 99.98%</span>
-              <span>·</span>
-              <span>客户端 {appVersion}</span>
+            <div className="cc-hero-meta-row" style={{ marginTop: 4, gap: 8, flexWrap: 'wrap' }}>
+              {[
+                { label: 'OpenAI', suffix: '/v1' },
+                { label: 'Claude', suffix: '/v1/messages' },
+                { label: 'Gemini', suffix: '/v1beta' },
+              ].map((ep) => (
+                <button
+                  key={ep.label}
+                  type="button"
+                  className="cc-endpoint-chip"
+                  onClick={() => {
+                    void navigator.clipboard.writeText(`http://127.0.0.1:${listenPort}${ep.suffix}`);
+                    setCopiedUrl(true);
+                    setTimeout(() => setCopiedUrl(false), 1800);
+                  }}
+                  title={`点击复制 ${ep.label} 兼容端点: http://127.0.0.1:${listenPort}${ep.suffix}`}
+                >
+                  <span className="cc-endpoint-chip-label">{ep.label}</span>
+                  <code>:{listenPort}{ep.suffix}</code>
+                  <Copy size={11} />
+                </button>
+              ))}
             </div>
           </div>
         </div>
@@ -392,10 +533,10 @@ export function CommandCenterPage({ onNavigate }: CommandCenterPageProps) {
             type="button"
             className="ds-btn ds-btn-secondary ds-btn-sm"
             onClick={copyGatewayUrl}
-            title="复制本地网关接口调用地址"
+            title="复制本地网关根地址"
           >
             {copiedUrl ? <Check size={13} className="text-green" /> : <Copy size={13} />}
-            <span>{copiedUrl ? '已复制地址' : '复制网关地址'}</span>
+            <span>{copiedUrl ? '已复制地址' : '复制根地址'}</span>
           </button>
 
           {coreRunning ? (
@@ -423,90 +564,111 @@ export function CommandCenterPage({ onNavigate }: CommandCenterPageProps) {
         </div>
       </section>
 
-      {/* 2. 四个核心 KPI 状态卡片 */}
+      {/* 2. 四个核心 KPI 状态卡片（带语义色柔光图标底座） */}
       <section className="cc-kpis-grid">
         {/* 总请求量 */}
-        <div className="cc-kpi-card">
+        <div className="cc-kpi-card kpi-blue">
           <div className="cc-kpi-header">
-            <span className="cc-kpi-title">总请求量</span>
+            <div>
+              <span className="cc-kpi-title">区间总请求量</span>
+              <div className="cc-kpi-value">{usageStats.totalRequests.toLocaleString()}</div>
+            </div>
+            <div className="cc-kpi-icon-box blue">
+              <Activity size={18} />
+            </div>
+          </div>
+          <div className="cc-kpi-footer-meta">
             <span className="cc-kpi-trend">
               <ArrowUpRight size={13} />
-              +12.5%
+              成功 {usageStats.successCount.toLocaleString()} · 失败 {usageStats.failureCount}
             </span>
           </div>
-          <div className="cc-kpi-value">24,821</div>
-          <svg className="cc-kpi-sparkline" viewBox="0 0 100 24" preserveAspectRatio="none">
-            <path
-              d="M0,20 Q20,15 40,16 T70,8 T100,4"
-              fill="none"
-              stroke="var(--chart-line-total)"
-              strokeWidth="2"
-              strokeLinecap="round"
-            />
-          </svg>
         </div>
 
         {/* 请求成功率 */}
-        <div className="cc-kpi-card">
+        <div className="cc-kpi-card kpi-green">
           <div className="cc-kpi-header">
-            <span className="cc-kpi-title">请求成功率</span>
+            <div>
+              <span className="cc-kpi-title">网关转发成功率</span>
+              <div className="cc-kpi-value">
+                {usageStats.totalRequests > 0 ? usageStats.successRate.toFixed(1) : '100'}
+                <span className="cc-kpi-unit">%</span>
+              </div>
+            </div>
+            <div className="cc-kpi-icon-box green">
+              <CheckCircle2 size={18} />
+            </div>
+          </div>
+          <div className="cc-kpi-footer-meta">
             <span className="cc-kpi-trend">
-              <ArrowUpRight size={13} />
-              +0.04%
+              错误率{' '}
+              {usageStats.totalRequests > 0
+                ? `${((usageStats.failureCount / usageStats.totalRequests) * 100).toFixed(2)}%`
+                : '0.00%'}
             </span>
           </div>
-          <div className="cc-kpi-value">99.88%</div>
-          <svg className="cc-kpi-sparkline" viewBox="0 0 100 24" preserveAspectRatio="none">
-            <path
-              d="M0,18 Q30,16 50,14 T80,8 T100,5"
-              fill="none"
-              stroke="var(--status-success)"
-              strokeWidth="2"
-              strokeLinecap="round"
-            />
-          </svg>
         </div>
 
         {/* 平均响应延迟 */}
-        <div className="cc-kpi-card">
+        <div className="cc-kpi-card kpi-cyan">
           <div className="cc-kpi-header">
-            <span className="cc-kpi-title">平均响应延迟</span>
-            <span className="cc-kpi-trend">
-              <ArrowDownRight size={13} />
-              -14ms
-            </span>
+            <div>
+              <span className="cc-kpi-title">平均响应延迟</span>
+              <div className="cc-kpi-value">
+                {usageStats.averageLatencyMs > 0 ? (
+                  usageStats.averageLatencyMs < 1000 ? (
+                    <>
+                      {Math.round(usageStats.averageLatencyMs)}
+                      <span className="cc-kpi-unit">ms</span>
+                    </>
+                  ) : (
+                    <>
+                      {(usageStats.averageLatencyMs / 1000).toFixed(2)}
+                      <span className="cc-kpi-unit">s</span>
+                    </>
+                  )
+                ) : (
+                  '—'
+                )}
+              </div>
+            </div>
+            <div className="cc-kpi-icon-box cyan">
+              <Clock size={18} />
+            </div>
           </div>
-          <div className="cc-kpi-value">183ms</div>
-          <svg className="cc-kpi-sparkline" viewBox="0 0 100 24" preserveAspectRatio="none">
-            <path
-              d="M0,8 Q25,10 50,14 T75,12 T100,16"
-              fill="none"
-              stroke="var(--brand-primary)"
-              strokeWidth="2"
-              strokeLinecap="round"
-            />
-          </svg>
+          <div className="cc-kpi-footer-meta">
+            <span className="cc-kpi-trend">端到端流式首包与完成耗时</span>
+          </div>
         </div>
 
-        {/* 异常错误率 */}
-        <div className="cc-kpi-card">
+        {/* 累计 Token 消耗 */}
+        <div className="cc-kpi-card kpi-teal">
           <div className="cc-kpi-header">
-            <span className="cc-kpi-title">异常错误率</span>
-            <span className="cc-kpi-trend">
-              <ArrowDownRight size={13} />
-              -0.04%
-            </span>
+            <div>
+              <span className="cc-kpi-title">区间 Token 吞吐量</span>
+              <div className="cc-kpi-value">
+                {usageStats.totalTokens >= 1_000_000 ? (
+                  <>
+                    {(usageStats.totalTokens / 1_000_000).toFixed(2)}
+                    <span className="cc-kpi-unit">M</span>
+                  </>
+                ) : usageStats.totalTokens >= 1000 ? (
+                  <>
+                    {(usageStats.totalTokens / 1000).toFixed(1)}
+                    <span className="cc-kpi-unit">k</span>
+                  </>
+                ) : (
+                  usageStats.totalTokens.toLocaleString()
+                )}
+              </div>
+            </div>
+            <div className="cc-kpi-icon-box teal">
+              <Sparkles size={18} />
+            </div>
           </div>
-          <div className="cc-kpi-value">0.12%</div>
-          <svg className="cc-kpi-sparkline" viewBox="0 0 100 24" preserveAspectRatio="none">
-            <path
-              d="M0,12 Q30,16 60,18 T100,20"
-              fill="none"
-              stroke="var(--status-error)"
-              strokeWidth="2"
-              strokeLinecap="round"
-            />
-          </svg>
+          <div className="cc-kpi-footer-meta">
+            <span className="cc-kpi-trend">含输入、输出与推理思考 Tokens</span>
+          </div>
         </div>
       </section>
 
@@ -552,10 +714,10 @@ export function CommandCenterPage({ onNavigate }: CommandCenterPageProps) {
               onMouseLeave={() => setHoveredIndex(null)}
             >
               <defs>
-                {/* 渐变面积填充 */}
+                {/* 渐变面积填充 (低透明度浅蓝色渐变) */}
                 <linearGradient id="trafficAreaGradient" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="var(--chart-line-total)" stopOpacity="0.28" />
-                  <stop offset="90%" stopColor="var(--chart-line-total)" stopOpacity="0.0" />
+                  <stop offset="0%" stopColor="var(--chart-line-total)" stopOpacity="0.22" />
+                  <stop offset="92%" stopColor="var(--chart-line-total)" stopOpacity="0.0" />
                 </linearGradient>
               </defs>
 
@@ -569,18 +731,20 @@ export function CommandCenterPage({ onNavigate }: CommandCenterPageProps) {
                       y1={yPos}
                       x2={svgWidth - padRight}
                       y2={yPos}
-                      stroke="var(--border-color)"
+                      stroke="var(--chart-grid)"
                       strokeWidth="1"
                       strokeDasharray={tick.val === 0 ? 'none' : '3 3'}
-                      opacity={tick.val === 0 ? 0.8 : 0.5}
+                      opacity={tick.val === 0 ? 0.85 : 0.6}
                     />
                     <text
                       x={padLeft - 10}
                       y={yPos + 4}
                       fill="var(--text-muted)"
-                      fontSize="10"
+                      fontSize="11"
+                      fontWeight="400"
                       textAnchor="end"
-                      fontFamily="var(--font-mono)"
+                      fontFamily="var(--font-sans)"
+                      style={{ fontVariantNumeric: 'tabular-nums' }}
                     >
                       {tick.label}
                     </text>
@@ -591,17 +755,17 @@ export function CommandCenterPage({ onNavigate }: CommandCenterPageProps) {
               {/* 面积渐变层 */}
               <path d={totalAreaPath} fill="url(#trafficAreaGradient)" />
 
-              {/* 总请求量主曲线 */}
+              {/* 总请求量主曲线 (品牌蓝) */}
               <path
                 d={totalLinePath}
                 fill="none"
                 stroke="var(--chart-line-total)"
-                strokeWidth="2.5"
+                strokeWidth="2.2"
                 strokeLinecap="round"
                 strokeLinejoin="round"
               />
 
-              {/* 成功请求量虚线 */}
+              {/* 成功请求量曲线 (绿色) */}
               <path
                 d={successLinePath}
                 fill="none"
@@ -611,12 +775,14 @@ export function CommandCenterPage({ onNavigate }: CommandCenterPageProps) {
                 strokeLinecap="round"
               />
 
-              {/* 失败与异常请求走势 */}
+              {/* 失败与异常请求走势：仅在存在异常时突出显示，避免无异常时红线长期占据视觉焦点 */}
               <path
                 d={errorLinePath}
                 fill="none"
                 stroke="var(--chart-line-failed)"
-                strokeWidth="1.5"
+                strokeWidth={currentPoints.some((p) => p.err > 0) ? '1.6' : '1'}
+                strokeDasharray={currentPoints.some((p) => p.err > 0) ? 'none' : '3 3'}
+                opacity={currentPoints.some((p) => p.err > 0) ? 0.9 : 0.16}
                 strokeLinecap="round"
               />
 
@@ -627,9 +793,11 @@ export function CommandCenterPage({ onNavigate }: CommandCenterPageProps) {
                   x={getX(i)}
                   y={svgHeight - 10}
                   fill="var(--text-muted)"
-                  fontSize="10"
+                  fontSize="11"
+                  fontWeight="400"
                   textAnchor="middle"
-                  fontFamily="var(--font-mono)"
+                  fontFamily="var(--font-sans)"
+                  style={{ fontVariantNumeric: 'tabular-nums' }}
                 >
                   {p.t}
                 </text>
@@ -725,18 +893,18 @@ export function CommandCenterPage({ onNavigate }: CommandCenterPageProps) {
           </div>
 
           {/* 中文图例与指标说明 */}
-          <div style={{ display: 'flex', gap: '20px', marginTop: '12px', fontSize: '11.5px', color: 'var(--text-secondary)', flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', gap: '20px', marginTop: '12px', fontSize: '12.5px', fontWeight: 400, color: 'var(--text-secondary)', flexWrap: 'wrap' }}>
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
               <span className="traffic-legend-dot" style={{ background: 'var(--chart-line-total)' }} />
               总请求量 (QPS走势)
             </span>
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
               <span className="traffic-legend-dot" style={{ background: 'var(--chart-line-success)' }} />
-              成功请求 (99.8%)
+              成功请求 ({usageStats.totalRequests > 0 ? `${usageStats.successRate.toFixed(1)}%` : '100%'})
             </span>
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', opacity: currentPoints.some((p) => p.err > 0) ? 1 : 0.75 }}>
               <span className="traffic-legend-dot" style={{ background: 'var(--chart-line-failed)' }} />
-              异常与限流拦截
+              异常与限流拦截 ({usageStats.failureCount})
             </span>
           </div>
         </div>
@@ -748,53 +916,44 @@ export function CommandCenterPage({ onNavigate }: CommandCenterPageProps) {
               <Cpu size={16} className="text-brand" />
               模型服务状态
             </div>
-            <span className="ds-badge ds-badge-mono">4 个供应商在线</span>
+            <span className="ds-badge ds-badge-mono">
+              {activeProviders.length > 0 ? `${activeProviders.length} 个供应商已挂载` : '待接入供应商'}
+            </span>
           </div>
 
           <div className="model-status-list">
-            <div className="model-status-item">
-              <div className="model-status-left">
-                <img src={openaiIcon} alt="OpenAI" className="model-status-logo" />
-                <span className="model-status-name">OpenAI</span>
+            {activeProviders.length > 0 ? (
+              activeProviders.map((prov) => (
+                <div
+                  key={prov.key}
+                  className="model-status-item"
+                  style={{ cursor: 'pointer' }}
+                  onClick={() => onNavigate('providers')}
+                  title={`点击查看 ${prov.name} 供应商集群详情`}
+                >
+                  <div className="model-status-left">
+                    {prov.icon ? (
+                      <img src={prov.icon} alt={prov.name} className="model-status-logo" />
+                    ) : (
+                      <Layers size={16} className="text-brand" style={{ flexShrink: 0 }} />
+                    )}
+                    <span className="model-status-name" title={prov.name}>
+                      {prov.name}
+                    </span>
+                  </div>
+                  <div className="model-status-right">
+                    <span className={`ds-badge ${coreRunning ? 'ds-badge-green' : 'ds-badge-mono'}`}>
+                      {coreRunning ? '● 在线就绪' : '● 待启动'}
+                    </span>
+                    <span className="model-status-latency">{prov.modelCount} 个模型</span>
+                  </div>
+                </div>
+              ))
+            ) : (
+              <div style={{ padding: '24px 12px', textAlign: 'center', color: 'var(--text-muted)', fontSize: 12.5 }}>
+                暂无已挂载的供应商模型，请前往「API 接入」或「OAuth 授权凭据」添加
               </div>
-              <div className="model-status-right">
-                <span className="ds-badge ds-badge-green">● 在线正常</span>
-                <span className="model-status-latency">182ms</span>
-              </div>
-            </div>
-
-            <div className="model-status-item">
-              <div className="model-status-left">
-                <img src={claudeIcon} alt="Claude" className="model-status-logo" />
-                <span className="model-status-name">Claude</span>
-              </div>
-              <div className="model-status-right">
-                <span className="ds-badge ds-badge-green">● 在线正常</span>
-                <span className="model-status-latency">241ms</span>
-              </div>
-            </div>
-
-            <div className="model-status-item">
-              <div className="model-status-left">
-                <img src={geminiIcon} alt="Gemini" className="model-status-logo" />
-                <span className="model-status-name">Gemini</span>
-              </div>
-              <div className="model-status-right">
-                <span className="ds-badge ds-badge-green">● 在线正常</span>
-                <span className="model-status-latency">208ms</span>
-              </div>
-            </div>
-
-            <div className="model-status-item">
-              <div className="model-status-left">
-                <img src={deepseekIcon} alt="DeepSeek" className="model-status-logo" />
-                <span className="model-status-name">DeepSeek</span>
-              </div>
-              <div className="model-status-right">
-                <span className="ds-badge ds-badge-green">● 在线正常</span>
-                <span className="model-status-latency">356ms</span>
-              </div>
-            </div>
+            )}
           </div>
         </div>
       </section>
@@ -868,15 +1027,15 @@ export function CommandCenterPage({ onNavigate }: CommandCenterPageProps) {
           <div className="system-status-grid">
             <div className="system-status-tile">
               <div className="system-status-tile-label">内核进程 PID</div>
-              <div className="system-status-tile-val">{systemMetrics.corePid}</div>
+              <div className="system-status-tile-val is-mono">{systemMetrics.corePid}</div>
             </div>
             <div className="system-status-tile">
               <div className="system-status-tile-label">内核版本</div>
-              <div className="system-status-tile-val">{systemMetrics.coreVer}</div>
+              <div className="system-status-tile-val is-mono">{systemMetrics.coreVer}</div>
             </div>
             <div className="system-status-tile">
               <div className="system-status-tile-label">监听地址与端口</div>
-              <div className="system-status-tile-val">{systemMetrics.portDisplay}</div>
+              <div className="system-status-tile-val is-mono">{systemMetrics.portDisplay}</div>
             </div>
             <div className="system-status-tile">
               <div className="system-status-tile-label">CPU 架构与并发</div>

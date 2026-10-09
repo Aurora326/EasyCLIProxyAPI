@@ -1,14 +1,13 @@
+import { useState } from 'react';
 import {
-  Bell,
-  Command,
+  Check,
+  Copy,
   ExternalLink,
   Moon,
+  Power,
   Search,
   Sun,
-  Monitor,
-  CheckCircle2,
 } from 'lucide-react';
-import { useI18n } from '../i18n';
 import type { ThemePreference } from '../theme';
 
 interface ConsoleHeaderProps {
@@ -16,6 +15,8 @@ interface ConsoleHeaderProps {
   pageSubtitle?: string;
   onOpenSearch: () => void;
   coreRunning: boolean;
+  corePort?: number;
+  onToggleCore?: () => void;
   themePreference: ThemePreference;
   onThemeChange: (theme: ThemePreference) => void;
   onOpenContact: () => void;
@@ -26,11 +27,13 @@ export function ConsoleHeader({
   pageSubtitle,
   onOpenSearch,
   coreRunning,
+  corePort = 8317,
+  onToggleCore,
   themePreference,
   onThemeChange,
   onOpenContact,
 }: ConsoleHeaderProps) {
-  const { t } = useI18n();
+  const [copiedEndpoint, setCopiedEndpoint] = useState(false);
 
   const currentEffectiveTheme =
     typeof document !== 'undefined' && document.documentElement.dataset.theme === 'dark'
@@ -41,6 +44,16 @@ export function ConsoleHeader({
 
   const toggleTheme = () => {
     onThemeChange(currentEffectiveTheme === 'dark' ? 'light' : 'dark');
+  };
+
+  const handleCopyEndpoint = async () => {
+    try {
+      await navigator.clipboard.writeText(`http://127.0.0.1:${corePort}/v1`);
+      setCopiedEndpoint(true);
+      setTimeout(() => setCopiedEndpoint(false), 1800);
+    } catch {
+      // 忽略复制异常
+    }
   };
 
   return (
@@ -67,10 +80,71 @@ export function ConsoleHeader({
 
       {/* 右侧操作区 */}
       <div className="header-right">
-        {/* 网关在线运行状态 */}
-        <div className={`header-status-pill ${coreRunning ? 'online' : ''}`}>
-          <div className={`status-pulse-dot ${coreRunning ? 'online' : 'offline'}`} />
-          <span>{coreRunning ? '网关运行中 · 127.0.0.1:8317' : '网关服务已离线'}</span>
+        {/* 可交互网关运行状态与快捷控制胶囊 */}
+        <div
+          className={`header-status-pill ${coreRunning ? 'online' : ''}`}
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 6,
+            paddingRight: onToggleCore ? 4 : 10,
+          }}
+        >
+          <button
+            type="button"
+            onClick={() => void handleCopyEndpoint()}
+            title="点击复制本地网关 OpenAI 兼容端点 (http://127.0.0.1:端口/v1)"
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 6,
+              background: 'transparent',
+              border: 'none',
+              padding: 0,
+              color: 'inherit',
+              fontSize: 'inherit',
+              fontWeight: 'inherit',
+              cursor: 'pointer',
+            }}
+          >
+            <div className={`status-pulse-dot ${coreRunning ? 'online' : 'offline'}`} />
+            <span>
+              {copiedEndpoint
+                ? '已复制网关地址'
+                : coreRunning
+                  ? `127.0.0.1:${corePort}`
+                  : '网关未启动'}
+            </span>
+            {copiedEndpoint ? (
+              <Check size={12} style={{ opacity: 0.9 }} />
+            ) : (
+              <Copy size={11} style={{ opacity: 0.6 }} />
+            )}
+          </button>
+
+          {onToggleCore && (
+            <button
+              type="button"
+              onClick={onToggleCore}
+              title={coreRunning ? '点击停止网关内核' : '点击一键启动网关内核'}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                width: 22,
+                height: 22,
+                borderRadius: 999,
+                border: 'none',
+                background: coreRunning ? 'rgba(16, 185, 129, 0.16)' : 'rgba(37, 99, 235, 0.14)',
+                color: 'inherit',
+                cursor: 'pointer',
+                padding: 0,
+                marginLeft: 2,
+              }}
+            >
+              <Power size={11} />
+            </button>
+          )}
         </div>
 
         {/* 深浅主题切换 */}
@@ -86,17 +160,6 @@ export function ConsoleHeader({
           ) : (
             <Moon size={15} aria-hidden="true" />
           )}
-        </button>
-
-        {/* 社区技术交流 */}
-        <button
-          type="button"
-          className="header-action-btn"
-          onClick={onOpenContact}
-          title="QQ 群技术交流与问题反馈"
-          aria-label="技术交流"
-        >
-          <ExternalLink size={14} aria-hidden="true" />
         </button>
       </div>
     </header>

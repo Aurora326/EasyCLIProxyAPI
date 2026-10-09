@@ -8,7 +8,8 @@
     "build": "tsc && vite build",
     "check": "tsc --noEmit",
     "preview": "vite preview",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "build:portable": "tauri build && powershell -NoProfile -Command \"Get-Process -Name EasyCLIProxyAPI,cpa-gui -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue; Start-Sleep -Seconds 1; Copy-Item -Path src-tauri/target/release/cpa-gui.exe -Destination bin-work/EasyCLIProxyAPI.exe -Force\""
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

@@ -34,7 +34,6 @@ import { useCoreRuntime, type CoreStatus } from '../coreRuntime';
 import { useI18n } from '../i18n';
 import { MessageNotice, FloatingNotice, useAppNotice } from '../appNotice';
 import { webUiManagementUrl } from '../services/clientAccess';
-import { ThinkingAliasesPage } from './ThinkingAliasesPage';
 import { CloudSyncPanel } from '../components/CloudSyncPanel';
 import {
   QUOTA_AUTO_REFRESH_OPTIONS,
@@ -138,7 +137,7 @@ const ROUTING_OPTIONS = [
   { value: 'fill-first', labelKey: 'config.routing.fillFirst' },
 ] as const;
 
-export function ConfigPanelPage() {
+export function ConfigPanelPage({ onNavigate: _onNavigate }: { onNavigate?: (pageId: string) => void } = {}) {
   const { t } = useI18n();
   const { status: coreStatus, publishStatus, refreshStatus } = useCoreRuntime();
   const [settings, setSettings] = useState<CoreConfigSettings | null>(null);
@@ -1052,18 +1051,6 @@ export function ConfigPanelPage() {
           onClick={() => setActiveSubpage('routing')}
         >
           {t('config.tabs.routing')}
-        </button>
-        <button
-          type="button"
-          id="config-subpage-tab-aliases"
-          role="tab"
-          className={activeSubpage === 'aliases' ? 'active' : ''}
-          aria-selected={activeSubpage === 'aliases'}
-          aria-controls="config-subpage-panel-aliases"
-          tabIndex={activeSubpage === 'aliases' ? 0 : -1}
-          onClick={() => setActiveSubpage('aliases')}
-        >
-          {t('app.nav.thinkingAliases')}
         </button>
         <button
           type="button"
@@ -2194,16 +2181,7 @@ export function ConfigPanelPage() {
         </div>
       ) : activeSubpage === 'cloud-sync' ? (
         <CloudSyncPanel />
-      ) : (
-        <div
-          className="config-subpage-panel"
-          id="config-subpage-panel-aliases"
-          role="tabpanel"
-          aria-labelledby="config-subpage-tab-aliases"
-        >
-          <ThinkingAliasesPage />
-        </div>
-      )}
+      ) : null}
 
       {addDialogOpen ? (
         <div className="config-dialog-backdrop" onMouseDown={(event) => {

@@ -12,7 +12,7 @@ import { invoke } from '@tauri-apps/api/core';
 import {
   ArrowRight,
   BrainCircuit,
-  Check,
+  Check, Copy,
   GitFork,
   LoaderCircle,
   Plus,
@@ -186,7 +186,7 @@ const thinkingAliasSourceDetail = (source: ThinkingAliasSource) => (
   thinkingAliasProviderDetail(source.kind, source.provider)
 );
 
-export function ThinkingAliasesPage() {
+export function ThinkingAliasesPage({ onTestModel }: { onTestModel?: (modelName: string) => void } = {}) {
   const { askConfirmation, confirmationDialog } = useConfirmation();
   const { t } = useI18n();
   const [thinkingEntries, setThinkingEntries] = useState<ThinkingAliasEntry[]>([]);
@@ -213,6 +213,14 @@ export function ThinkingAliasesPage() {
   const [busyAction, setBusyAction] = useState<'create' | 'edit' | 'delete' | ''>('');
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+  const [copiedAlias, setCopiedAlias] = useState<string | null>(null);
+  const handleCopyAlias = async (aliasName: string) => {
+    try {
+      await navigator.clipboard.writeText(aliasName);
+      setCopiedAlias(aliasName);
+      setTimeout(() => setCopiedAlias((prev) => (prev === aliasName ? null : prev)), 1800);
+    } catch {}
+  };
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -631,7 +639,7 @@ export function ThinkingAliasesPage() {
                     : undefined}
                   value={modelPickerOpen ? search : selectedSource?.model ?? ''}
                   onFocus={(event) => {
-                    setSearch(selectedSource?.model ?? '');
+                    setSearch('');
                     setModelPickerOpen(true);
                     event.currentTarget.select();
                   }}
@@ -865,6 +873,26 @@ export function ThinkingAliasesPage() {
                   {entry.serviceTier ? (
                     <span className="thinking-effort-badge fast">{t('speedAliases.fast.title')}</span>
                   ) : null}
+                <button
+                  type="button"
+                  className="icon-button quiet"
+                  onClick={() => void handleCopyAlias(entry.alias)}
+                  title="复制模型别名"
+                  aria-label="复制模型别名"
+                >
+                  {copiedAlias === entry.alias ? <Check size={15} style={{ color: '#10b981' }} /> : <Copy size={15} />}
+                </button>
+                {onTestModel ? (
+                  <button
+                    type="button"
+                    className="icon-button quiet"
+                    onClick={() => onTestModel(entry.alias)}
+                    title="在极速调试舱中测试此别名"
+                    aria-label="在极速调试舱中测试此别名"
+                  >
+                    <Zap size={15} style={{ color: 'var(--clean-primary, #06b6d4)' }} />
+                  </button>
+                ) : null}
                 <button type="button" className="icon-button quiet" disabled={loading || Boolean(busyAlias)}
                   onClick={() => void editAlias(entry)} title={t('common.edit')} aria-label={t('common.edit')}>
                   <Pencil size={15} />

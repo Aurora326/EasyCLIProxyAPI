@@ -1,7 +1,6 @@
 const alwaysAvailablePages = new Set([
   'overview',
   'home',
-  'easy',
   'api',
   'providers',
   'routes',

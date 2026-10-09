@@ -24,16 +24,7 @@ export function getCurrentLocale(): AppLocale {
   return currentLocale;
 }
 
-export function normalizeLocale(value: string | null | undefined): AppLocale {
-  const normalized = value?.trim().toLowerCase() ?? '';
-  if (normalized.startsWith('en')) return 'en';
-  if (normalized.startsWith('ja')) return 'ja';
-  if (
-    normalized === 'zh-tw'
-    || normalized === 'zh-hk'
-    || normalized === 'zh-mo'
-    || normalized.startsWith('zh-hant')
-  ) return 'zh-TW';
+export function normalizeLocale(_value: string | null | undefined): AppLocale {
   return 'zh-CN';
 }
 

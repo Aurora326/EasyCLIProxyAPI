@@ -44,9 +44,9 @@ import { KernelPage } from './pages/Kernel';
 import { VersionManagementPage } from './pages/VersionManagementPage';
 import { OAuthManagementPage } from './pages/ManagementPages';
 import { AgentsPage } from './pages/AgentsPage';
-import { EasyModePage } from './pages/EasyModePage';
 import { UsageRecordsPage } from './pages/UsageRecordsPage';
 import { ThinkingAliasesPage } from './pages/ThinkingAliasesPage';
+import { ModelsCatalogPage } from './pages/ModelsCatalogPage';
 import { useI18n } from './i18n';
 import { AppUpdateDialog, AppUpdateProvider, useAppUpdate } from './appUpdate';
 import { appUpdateIndicatorState } from './appUpdateModel';
@@ -83,10 +83,11 @@ function App() {
 }
 
 function AppContent() {
-  const { locale, setLocale, t } = useI18n();
+  const { t } = useI18n();
   const { info: appUpdateInfo, hasUpdate, processing: appUpdateProcessing } = useAppUpdate();
   const { latest: coreLatest, hasUpdate: coreHasUpdate } = useCoreUpdate();
   const [active, setActive] = useState<string>('overview');
+  const [playgroundModel, setPlaygroundModel] = useState<string | undefined>(undefined);
   const [theme, setTheme] = useThemePreference();
   const [cmdPaletteOpen, setCmdPaletteOpen] = useState(false);
   const [windowsClosePrompt, setWindowsClosePrompt] = useState<WindowsClosePrompt | null>(null);
@@ -203,10 +204,23 @@ function AppContent() {
   }, [windowsClosePrompt]);
 
   const select = (pageId: string) => {
-    if (!canOpenAppPage(pageId, coreRunning)) {
+    const normalizedId =
+      pageId === 'routes'
+        ? 'model-mapping'
+        : pageId === 'agents'
+          ? 'smart-config'
+          : pageId === 'permissions'
+            ? 'config'
+            : pageId;
+    if (!canOpenAppPage(normalizedId, coreRunning)) {
       return;
     }
-    setActive(pageId);
+    setActive(normalizedId);
+  };
+
+  const handleTestModel = (modelName: string) => {
+    setPlaygroundModel(modelName);
+    select('playground');
   };
 
   const openContact = async () => {
@@ -305,14 +319,14 @@ function AppContent() {
       case 'api':
         return <ApiAccessPage />;
       case 'providers':
-        return <ProvidersPage />;
+        return <ProvidersPage onNavigate={select} onTestModel={handleTestModel} />;
       case 'routes':
       case 'model-mapping':
-        return <ThinkingAliasesPage />;
+        return <ThinkingAliasesPage onTestModel={handleTestModel} />;
       case 'models':
-        return <ApiAccessPage />;
+        return <ModelsCatalogPage onNavigate={select} onTestModel={handleTestModel} />;
       case 'playground':
-        return <PlaygroundPage />;
+        return <PlaygroundPage initialModel={playgroundModel} />;
       case 'logs':
       case 'traffic':
       case 'errors':
@@ -325,21 +339,12 @@ function AppContent() {
       case 'permissions':
         return <ConfigPanelPage />;
       case 'smart-config':
+      case 'agents':
         return <AgentsPage />;
       case 'config':
-        return <ConfigPanelPage />;
+        return <ConfigPanelPage onNavigate={select} />;
       case 'versions':
         return <VersionManagementPage />;
-      case 'easy':
-        return (
-          <EasyModePage
-            onExit={() => select('overview')}
-            theme={theme}
-            setTheme={setTheme}
-            locale={locale}
-            setLocale={setLocale}
-          />
-        );
       default:
         return <CommandCenterPage onNavigate={select} />;
     }
@@ -348,27 +353,27 @@ function AppContent() {
   return (
     <>
       <div className="console-shell">
-        {active !== 'easy' ? (
-          <ConsoleSidebar
-            activeId={active}
-            onSelect={select}
-            coreRunning={coreRunning}
-            corePort={corePort}
-          />
-        ) : null}
+        <ConsoleSidebar
+          activeId={active}
+          onSelect={select}
+          coreRunning={coreRunning}
+          corePort={corePort}
+        />
 
         <div className="console-workspace">
-          {active !== 'easy' ? (
-            <ConsoleHeader
-              pageTitle={pageMeta.title}
-              pageSubtitle={pageMeta.subtitle}
-              onOpenSearch={() => setCmdPaletteOpen(true)}
-              coreRunning={coreRunning}
-              themePreference={theme}
-              onThemeChange={setTheme}
-              onOpenContact={() => void openContact()}
-            />
-          ) : null}
+          <ConsoleHeader
+            pageTitle={pageMeta.title}
+            pageSubtitle={pageMeta.subtitle}
+            onOpenSearch={() => setCmdPaletteOpen(true)}
+            coreRunning={coreRunning}
+            corePort={corePort}
+            onToggleCore={() =>
+              void handleRunCoreCommand(coreRunning ? 'stop_core_process' : 'start_core_process')
+            }
+            themePreference={theme}
+            onThemeChange={setTheme}
+            onOpenContact={() => void openContact()}
+          />
 
           <main className="console-main-content">
             {isAlwaysAvailablePage(active) || coreRunning ? (

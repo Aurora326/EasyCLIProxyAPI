@@ -4,8 +4,8 @@
    ========================================================================== */
 
 :root {
-  --clean-font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
-  --clean-font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  --clean-font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'PingFang SC', 'HarmonyOS Sans SC', 'MiSans', 'Noto Sans SC', 'Source Han Sans SC', 'Microsoft YaHei UI', 'Segoe UI Variable Display', 'Segoe UI', 'Microsoft YaHei', sans-serif;
+  --clean-font-mono: 'JetBrains Mono', Consolas, 'SFMono-Regular', ui-monospace, Menlo, Monaco, monospace;
   --clean-transition: 0.18s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
@@ -14,69 +14,76 @@
    -------------------------------------------------------------------------- */
 :root,
 [data-theme="light"] {
-  --clean-bg: #f8fafd;
-  --clean-sidebar-bg: #ffffff;
-  --clean-card-bg: #ffffff;
-  --clean-card-hover: #ffffff;
-  --clean-card-muted: #f1f5f9;
+  --clean-bg: #F4F7FB;
+  --clean-sidebar-bg: #FFFFFF;
+  --clean-card-bg: #FFFFFF;
+  --clean-card-hover: #F8FAFC;
+  --clean-card-muted: #F1F5F9;
 
-  --clean-border: rgba(226, 232, 240, 0.95);
-  --clean-border-subtle: rgba(241, 245, 249, 0.85);
-  --clean-border-hover: rgba(6, 182, 212, 0.45);
-  --clean-shadow: 0 2px 16px -2px rgba(6, 182, 212, 0.07), 0 1px 3px 0 rgba(0, 0, 0, 0.04);
-  --clean-shadow-elevated: 0 4px 20px -2px rgba(2, 132, 199, 0.08), 0 2px 6px -1px rgba(0, 0, 0, 0.04);
-  --clean-shadow-floating: 0 12px 32px -4px rgba(15, 23, 42, 0.12), 0 4px 12px -2px rgba(0, 0, 0, 0.06);
+  --clean-border: #E2E8F0;
+  --clean-border-subtle: #F1F5F9;
+  --clean-border-hover: #CBD5E1;
+  --clean-shadow: 0 2px 8px rgba(15, 23, 42, 0.04);
+  --clean-shadow-elevated: 0 4px 14px rgba(37, 99, 235, 0.08);
+  --clean-shadow-floating: 0 12px 32px -4px rgba(15, 23, 42, 0.1), 0 4px 12px -2px rgba(15, 23, 42, 0.05);
   --clean-card-highlight: inset 0 1px 0 0 rgba(255, 255, 255, 0.9);
-  --clean-card-gradient: linear-gradient(180deg, #ffffff 0%, #f9fafb 100%);
+  --clean-card-gradient: linear-gradient(180deg, #FFFFFF 0%, #F8FAFC 100%);
 
-  --clean-text-primary: #0f172a;
-  --clean-text-secondary: #475569;
-  --clean-text-muted: #94a3b8;
+  --clean-text-primary: #0F172A;
+  --clean-text-body: #334155;
+  --clean-text-secondary: #64748B;
+  --clean-text-muted: #94A3B8;
 
-  /* 纯白未来科技核心青蓝光系 */
-  --clean-primary: #0284c7;
-  --clean-primary-hover: #0369a1;
-  --clean-primary-soft: rgba(6, 182, 212, 0.08);
-  --clean-primary-border: rgba(6, 182, 212, 0.25);
+  /* 统一科技蓝品牌主色系与电光青辅助色 */
+  --clean-primary: #2563EB;
+  --clean-primary-hover: #1D4ED8;
+  --clean-primary-soft: #EFF6FF;
+  --clean-primary-border: #BFDBFE;
+  --clean-cyan: #06B6D4;
+  --clean-cyan-soft: #ECFEFF;
 
-  --clean-accent-btn-bg: #0284c7;
-  --clean-accent-btn-text: #ffffff;
-  --clean-accent-btn-hover: #0369a1;
-  --clean-accent-btn-border: #0284c7;
-  --clean-accent-btn-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05), 0 4px 12px -2px rgba(2, 132, 199, 0.35);
+  --clean-accent-btn-bg: #2563EB;
+  --clean-accent-btn-text: #FFFFFF;
+  --clean-accent-btn-hover: #1D4ED8;
+  --clean-accent-btn-border: #2563EB;
+  --clean-accent-btn-shadow: 0 2px 8px rgba(37, 99, 235, 0.18);
 
-  --clean-btn-secondary-bg: #ffffff;
+  --clean-btn-secondary-bg: #FFFFFF;
   --clean-btn-secondary-text: #334155;
-  --clean-btn-secondary-border: rgba(226, 232, 240, 0.95);
-  --clean-btn-secondary-hover: #f8fafc;
+  --clean-btn-secondary-border: #E2E8F0;
+  --clean-btn-secondary-hover: #F8FAFC;
 
-  --clean-status-green: #0d9488;
-  --clean-status-green-bg: rgba(13, 148, 136, 0.1);
-  --clean-status-green-text: #0f766e;
+  --clean-status-green: #10B981;
+  --clean-status-green-bg: #ECFDF5;
+  --clean-status-green-text: #059669;
 
-  --clean-status-gray: #64748b;
-  --clean-status-gray-bg: #f1f5f9;
+  --clean-status-warn: #F59E0B;
+  --clean-status-warn-bg: #FFFBEB;
+  --clean-status-warn-text: #D97706;
+
+  --clean-status-gray: #64748B;
+  --clean-status-gray-bg: #F1F5F9;
   --clean-status-gray-text: #475569;
 
-  --clean-status-red: #ef4444;
-  --clean-status-red-bg: #fef2f2;
-  --clean-status-red-text: #b91c1c;
+  --clean-status-red: #EF4444;
+  --clean-status-red-bg: #FEF2F2;
+  --clean-status-red-text: #DC2626;
 
-  --clean-nav-hover: #f1f5f9;
-  --clean-nav-active-bg: rgba(6, 182, 212, 0.1);
-  --clean-nav-active-text: #0284c7;
-  --clean-nav-active-border: rgba(6, 182, 212, 0.3);
+  --clean-nav-hover: #F8FAFC;
+  --clean-nav-active-bg: #EFF6FF;
+  --clean-nav-active-text: #2563EB;
+  --clean-nav-active-border: #BFDBFE;
 
-  --clean-code-bg: #f8fafc;
-  --clean-code-border: #e2e8f0;
-  --clean-terminal-bg: #0b1120;
-  --clean-terminal-text: #f1f5f9;
-  --clean-terminal-border: rgba(226, 232, 240, 0.95);
+  --clean-code-bg: #F1F5F9;
+  --clean-code-border: #E2E8F0;
+  --clean-terminal-bg: #0F172A;
+  --clean-terminal-text: #F1F5F9;
+  --clean-terminal-border: #E2E8F0;
 
   /* 额度剩余量的语义色（进度条填充 + 数值），供额度卡片与凭证列表共用 */
-  --clean-quota-good: #0d9488;
-  --clean-quota-warn: #d97706;
-  --clean-quota-low: #dc2626;
+  --clean-quota-good: #10B981;
+  --clean-quota-warn: #F59E0B;
+  --clean-quota-low: #EF4444;
 }
 
 /* --------------------------------------------------------------------------
@@ -255,11 +262,14 @@
    -------------------------------------------------------------------------- */
 body, html {
   font-family: var(--clean-font-sans);
+  font-weight: 400;
+  line-height: 1.5;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
   background: var(--clean-bg) !important;
   color: var(--clean-text-primary);
-  letter-spacing: -0.01em;
+  letter-spacing: normal;
 }
 
 /* 全局数值、端口、指标强制等宽排版，杜绝数字跳动 */
@@ -2284,11 +2294,12 @@ button:active:not(:disabled) {
   transition: transform 0.06s ease;
 }
 
-/* 10. 内置模型测试舱专属样式 (Playground Deck) */
+/* 10. 内置模型测试舱专属样式 (Playground Deck - 全高自适应弹性布局) */
 .playground-page {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 12px;
+  min-height: calc(100vh - 104px);
 }
 
 .playground-top-controls {
@@ -2326,11 +2337,12 @@ button:active:not(:disabled) {
 .playground-chat-container {
   display: flex;
   flex-direction: column;
+  flex: 1;
   gap: 12px;
-  min-height: 280px;
-  max-height: 480px;
+  min-height: 360px;
+  max-height: calc(100vh - 255px);
   overflow-y: auto;
-  padding: 16px;
+  padding: 18px;
   background: var(--clean-bg);
   border: 1px solid var(--clean-border);
   border-radius: 12px;
@@ -2351,7 +2363,7 @@ button:active:not(:disabled) {
   background: var(--clean-primary);
   color: #ffffff;
   border-bottom-right-radius: 2px;
-  box-shadow: 0 2px 10px rgba(2, 132, 199, 0.28);
+  box-shadow: 0 2px 10px rgba(37, 99, 235, 0.24);
 }
 
 .playground-message-assistant {
@@ -2398,7 +2410,60 @@ button:active:not(:disabled) {
   background: transparent;
 }
 
+/* 11. 模型映射与别名：一体化清爽列表 + 紧凑左对齐路由展示（不拉伸高度、不截断文字） */
+.thinking-alias-list-panel {
+  height: auto !important;
+  min-height: 0 !important;
+  padding: 4px 18px !important;
+}
 
+.thinking-alias-list {
+  display: flex !important;
+  flex-direction: column !important;
+}
 
+.thinking-alias-row {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) auto 34px !important;
+  align-items: center !important;
+  gap: 12px !important;
+  min-height: 64px !important;
+  padding: 10px 6px !important;
+}
 
+.thinking-alias-route {
+  display: grid !important;
+  grid-template-columns: 280px 24px minmax(180px, 1fr) !important;
+  align-items: center !important;
+  gap: 12px !important;
+  min-width: 0 !important;
+}
+
+.thinking-alias-route-source {
+  display: grid !important;
+  min-width: 0 !important;
+  gap: 3px !important;
+}
+
+.thinking-alias-route > strong {
+  color: var(--clean-text-primary) !important;
+  font-family: var(--clean-font-mono) !important;
+  font-size: 13.5px !important;
+  font-weight: 700 !important;
+}
+
+/* 12. 收敛子页面顶部工具栏高度与重复标题字号 */
+.management-header {
+  margin-bottom: 10px !important;
+  padding-bottom: 6px !important;
+}
+
+.management-header h1 {
+  font-size: 16px !important;
+  font-weight: 700 !important;
+}
+
+.sidebar-section {
+  margin-bottom: 8px !important;
+}
 
