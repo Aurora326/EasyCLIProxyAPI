@@ -1,4 +1,5 @@
 import { useConfirmation } from '../components/ConfirmationDialog';
+import { AnimatedNumber } from '../components/AnimatedNumber';
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react';
 import { invoke, isTauri } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
@@ -104,6 +105,7 @@ type UsageRecord = {
   provider: string;
   model: string;
   alias: string;
+  response_model: string;
   reasoning_effort: string;
   endpoint: string;
   api_key_hash: string;
@@ -854,7 +856,7 @@ function OverviewView({ overview, range }: { overview: UsageOverview; range?: Pi
   const cards = [
     {
       label: t('usage.stat.requests'),
-      value: compactNumber(overview.totalRequests),
+      value: <AnimatedNumber value={overview.totalRequests} format={compactNumber} />,
       meta: t('usage.stat.requestMeta', {
         success: compactNumber(overview.successCount),
         failed: compactNumber(overview.failureCount),
@@ -869,7 +871,7 @@ function OverviewView({ overview, range }: { overview: UsageOverview; range?: Pi
     },
     {
       label: t('usage.stat.tokens'),
-      value: compactNumber(overview.totalTokens),
+      value: <AnimatedNumber value={overview.totalTokens} format={compactNumber} />,
       meta: t('usage.stat.tokenMeta', {
         input: compactNumber(overview.inputTokens),
         output: compactNumber(overview.outputTokens),
@@ -883,7 +885,7 @@ function OverviewView({ overview, range }: { overview: UsageOverview; range?: Pi
     },
     {
       label: t('usage.stat.successRate'),
-      value: `${overview.successRate.toFixed(1)}%`,
+      value: <><AnimatedNumber value={overview.successRate} precision={1} />%</>,
       meta: t('usage.stat.successMeta', {
         success: compactNumber(overview.successCount),
         failed: compactNumber(overview.failureCount),
@@ -924,7 +926,7 @@ function OverviewView({ overview, range }: { overview: UsageOverview; range?: Pi
     },
     {
       label: t('usage.stat.estimatedCost'),
-      value: formatUsd(overview.estimatedCost),
+      value: <AnimatedNumber value={overview.estimatedCost} format={formatUsd} />,
       meta: t('usage.stat.costMeta', {
         priced: compactNumber(overview.pricedRequests),
         total: compactNumber(overview.totalRequests),
@@ -1580,7 +1582,9 @@ const getInitialVisibleColumns = (): EventColumnKey[] => {
           seen.add(key as EventColumnKey);
           return true;
         });
-        if (savedKeys.length > 0) return savedKeys;
+        if (savedKeys.length > 0) {
+          return savedKeys;
+        }
       }
     }
   } catch {
@@ -1745,13 +1749,45 @@ function UsageEventCell({
           {formatTime(record.timestamp)}
         </td>
       );
-    case 'model':
+    case 'model': {
+      const respModel = record.response_model ? record.response_model.trim() : '';
+      const displayModel = record.alias || record.model;
+      const hasRespModel = Boolean(respModel);
+      const isMismatch = hasRespModel && respModel !== record.model;
+      const tooltipLines: string[] = [
+        `请求模型: ${record.model || record.alias || '-'}`,
+      ];
+      if (hasRespModel) {
+        tooltipLines.push(`响应模型: ${respModel}`);
+        if (isMismatch) {
+          tooltipLines.push('模型不一致');
+        }
+        tooltipLines.push('来自用量 API 的 response_model (上游声明的模型名, 不代表已验证模型身份)。');
+      }
+      tooltipLines.push(`推理强度: ${record.reasoning_effort || 'auto'}`);
+      const tooltip = tooltipLines.join('\n');
+
       return (
-        <td className="usage-stacked-cell align-center">
-          <strong title={record.alias || record.model}>{record.alias || record.model}</strong>
-          <small title={record.reasoning_effort || 'auto'}>{record.reasoning_effort || 'auto'}</small>
+        <td className="usage-stacked-cell usage-model-cell align-center" title={tooltip}>
+          <strong className="usage-model-name" title={displayModel}>{displayModel}</strong>
+          <div>
+            <span className="usage-reasoning-pill" title={record.reasoning_effort || 'auto'}>
+              {record.reasoning_effort || 'auto'}
+            </span>
+          </div>
+          {hasRespModel && (
+            <div className="usage-response-model" title={`响应模型: ${respModel}`}>
+              响应模型: {respModel}
+            </div>
+          )}
+          {isMismatch && (
+            <div className="usage-mismatch-wrapper">
+              <span className="usage-model-mismatch-badge">模型不一致</span>
+            </div>
+          )}
         </td>
       );
+    }
     case 'provider':
       return (
         <td className="usage-td-provider align-center" title={record.provider || undefined}>
@@ -2332,7 +2368,7 @@ function PricingView({
       {confirmationDialog}
       <div className="usage-pricing-toolbar">
         <div className="usage-pricing-summary">
-          <strong>{formatUsd(pricing.totalCost)}</strong>
+          <strong><AnimatedNumber value={pricing.totalCost} format={formatUsd} /></strong>
           <span>
             {t('usage.pricing.coverage', {
               priced: compactNumber(pricing.pricedRequests),

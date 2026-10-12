@@ -376,11 +376,13 @@ function AppContent() {
           />
 
           <main className="console-main-content">
-            {isAlwaysAvailablePage(active) || coreRunning ? (
-              renderCurrentView()
-            ) : (
-              <CoreLockedPage />
-            )}
+            <div key={active} className="console-page-transition">
+              {isAlwaysAvailablePage(active) || coreRunning ? (
+                renderCurrentView()
+              ) : (
+                <CoreLockedPage />
+              )}
+            </div>
           </main>
         </div>
       </div>

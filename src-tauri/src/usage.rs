@@ -43,6 +43,7 @@ const LEGACY_USAGE_INBOX_DIR: &str = "inbox";
 const LEGACY_JSON_MIGRATION_KEY: &str = "legacy_json_v1";
 const USAGE_DATABASE_MIGRATION_KEY: &str = "keeper_v3";
 const USAGE_FAILURE_MIGRATION_KEY: &str = "failure_details_v4";
+const USAGE_RESPONSE_MODEL_MIGRATION_KEY: &str = "response_model_v6";
 const USAGE_EVENT_KEY_MIGRATION_KEY: &str = "event_key_v5";
 const USAGE_UPDATED_EVENT: &str = "usage-records-updated";
 const USAGE_SCHEMA_VERSION: u8 = 1;
@@ -197,6 +198,8 @@ pub(crate) struct UsageRecord {
     model: String,
     #[serde(default)]
     alias: String,
+    #[serde(default)]
+    pub(crate) response_model: String,
     #[serde(default, skip_serializing)]
     client_ip: Option<String>,
     #[serde(default, skip_serializing)]
@@ -1116,6 +1119,7 @@ fn initialize_usage_schema(connection: &Connection) -> Result<(), String> {
                 provider TEXT NOT NULL DEFAULT '',
                 model TEXT NOT NULL DEFAULT '',
                 alias TEXT NOT NULL DEFAULT '',
+                response_model TEXT NOT NULL DEFAULT '',
                 reasoning_effort TEXT NOT NULL DEFAULT '',
                 service_tier TEXT NOT NULL DEFAULT '',
                 response_service_tier TEXT NOT NULL DEFAULT '',
@@ -1221,6 +1225,7 @@ fn ensure_usage_failure_columns(connection: &Connection) -> Result<(), String> {
         ("canceled", "INTEGER NOT NULL DEFAULT 0"),
         ("failure_status", "INTEGER NOT NULL DEFAULT 0"),
         ("failure_body", "TEXT NOT NULL DEFAULT ''"),
+        ("response_model", "TEXT NOT NULL DEFAULT ''"),
     ] {
         if columns.contains(column) {
             continue;
@@ -1234,6 +1239,7 @@ fn ensure_usage_failure_columns(connection: &Connection) -> Result<(), String> {
         columns.insert(column.to_string());
     }
     backfill_usage_failure_details(connection)?;
+    backfill_usage_response_model(connection)?;
     Ok(())
 }
 
@@ -1305,6 +1311,72 @@ fn backfill_usage_failure_details(connection: &Connection) -> Result<(), String>
             params![USAGE_FAILURE_MIGRATION_KEY, Local::now().to_rfc3339()],
         )
         .map_err(|error| format!("记录使用记录失败详情迁移状态失败: {error}"))?;
+    Ok(())
+}
+
+fn backfill_usage_response_model(connection: &Connection) -> Result<(), String> {
+    let migrated = connection
+        .query_row(
+            "SELECT value FROM usage_metadata WHERE key = ?1",
+            params![USAGE_RESPONSE_MODEL_MIGRATION_KEY],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()
+        .map_err(|error| format!("读取使用记录响应模型迁移状态失败: {error}"))?;
+    if migrated.is_some() {
+        return Ok(());
+    }
+
+    if usage_table_exists(connection, "usage_inbox")? {
+        let rows = {
+            let mut statement = connection
+                .prepare(
+                    r#"
+                    SELECT usage_event_key, raw_message
+                    FROM usage_inbox
+                    WHERE status = 'processed' AND usage_event_key != ''
+                    "#,
+                )
+                .map_err(|error| format!("准备回填使用记录响应模型失败: {error}"))?;
+            let rows = statement
+                .query_map([], |row| {
+                    Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+                })
+                .map_err(|error| format!("查询使用记录响应模型失败: {error}"))?
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|error| format!("读取使用记录响应模型失败: {error}"))?;
+            rows
+        };
+        for (event_key, raw_message) in rows {
+            let Some(object) = serde_json::from_str::<Value>(&raw_message)
+                .ok()
+                .and_then(|value| value.as_object().cloned())
+            else {
+                continue;
+            };
+            let response_model = string_field(&object, "response_model").unwrap_or_default();
+            if response_model.trim().is_empty() {
+                continue;
+            }
+            connection
+                .execute(
+                    r#"
+                    UPDATE usage_events
+                    SET response_model = ?1
+                    WHERE event_key = ?2 AND (response_model = '' OR response_model IS NULL)
+                    "#,
+                    params![response_model, event_key],
+                )
+                .map_err(|error| format!("回填使用记录响应模型失败: {error}"))?;
+        }
+    }
+
+    connection
+        .execute(
+            "INSERT INTO usage_metadata (key, value) VALUES (?1, ?2)",
+            params![USAGE_RESPONSE_MODEL_MIGRATION_KEY, Local::now().to_rfc3339()],
+        )
+        .map_err(|error| format!("记录使用记录响应模型迁移状态失败: {error}"))?;
     Ok(())
 }
 
@@ -2237,12 +2309,13 @@ fn insert_usage_records_in_transaction(
                 generate, cached_tokens, collector_source,
                 input_tokens, output_tokens, reasoning_tokens, cache_read_tokens,
                 cache_creation_tokens, total_tokens, canceled, failure_status,
-                failure_body, created_at
+                failure_body, created_at, response_model
             ) VALUES (
                 ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10,
                 ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20,
                 ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29, ?30,
-                ?31, ?32, ?33, ?34, ?35, ?36, ?37, ?38, ?39, ?40
+                ?31, ?32, ?33, ?34, ?35, ?36, ?37, ?38, ?39, ?40,
+                ?41
             )
             "#,
         )
@@ -2313,6 +2386,7 @@ fn insert_usage_records_in_transaction(
                     i64::from(record.failure_status),
                     record.failure_body,
                     created_at,
+                    record.response_model,
                 ])
                 .map_err(|error| format!("写入 SQLite 使用记录失败: {error}"))?,
         );
@@ -2429,6 +2503,7 @@ fn normalize_usage_record(value: Value, config: &GuiConfigFile) -> Result<UsageR
         api_group_key,
         model: string_field(object, "model").unwrap_or_else(|| "unknown".to_string()),
         alias: string_field(object, "alias").unwrap_or_default(),
+        response_model: string_field(object, "response_model").unwrap_or_default(),
         client_ip: string_field(object, "client_ip"),
         x_forwarded_for: string_field(object, "x_forwarded_for"),
         user_agent: string_field(object, "user_agent"),
@@ -3633,7 +3708,7 @@ fn load_usage_events(
             cached_tokens, collector_source,
             input_tokens, output_tokens, reasoning_tokens, cache_read_tokens,
             cache_creation_tokens, total_tokens, canceled, failure_status,
-            failure_body
+            failure_body, response_model
         FROM usage_events{}
         ORDER BY timestamp_ms DESC, id DESC
         LIMIT ? OFFSET ?
@@ -3680,6 +3755,7 @@ fn usage_record_from_row(row: &Row<'_>) -> rusqlite::Result<UsageRecord> {
         api_group_key: row.get(20)?,
         model: row.get(8)?,
         alias: row.get(9)?,
+        response_model: row.get(36)?,
         client_ip: row.get(21)?,
         x_forwarded_for: row.get(22)?,
         user_agent: row.get(23)?,
@@ -4276,6 +4352,7 @@ mod tests {
             api_group_key: "hash".to_string(),
             model: model.to_string(),
             alias: String::new(),
+            response_model: String::new(),
             client_ip: None,
             x_forwarded_for: None,
             user_agent: None,

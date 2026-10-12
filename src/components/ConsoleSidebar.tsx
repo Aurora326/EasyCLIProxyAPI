@@ -70,8 +70,8 @@ export const navSections: NavSection[] = [
 interface ConsoleSidebarProps {
   activeId: string;
   onSelect: (id: string) => void;
-  coreRunning: boolean;
-  corePort: number;
+  coreRunning?: boolean;
+  corePort?: number;
 }
 
 export function ConsoleSidebar({
@@ -203,23 +203,7 @@ export function ConsoleSidebar({
         ))}
       </div>
 
-      {/* 底栏内核引擎卡片 */}
-      <div className="sidebar-footer">
-        <div className="sidebar-status-card">
-          <div className="status-indicator-group">
-            <div className={`status-pulse-dot ${coreRunning ? 'online' : 'offline'}`} />
-            <div>
-              <div className="sidebar-status-title">CLIProxyAPI 内核</div>
-              <div className="sidebar-status-desc">
-                {coreRunning ? `127.0.0.1:${corePort} 守护中` : '本地代理待命'}
-              </div>
-            </div>
-          </div>
-          <span className={`ds-badge ${coreRunning ? 'ds-badge-green' : 'ds-badge-mono'}`}>
-            {coreRunning ? '在线' : '待命'}
-          </span>
-        </div>
-      </div>
+
     </aside>
   );
 }

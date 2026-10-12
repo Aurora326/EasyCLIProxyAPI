@@ -126,6 +126,8 @@ export const combineModelAliasSources = (
   return [...sources.values()];
 };
 
+const KNOWN_ALIAS_EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max', 'thinking'];
+
 export const defaultModelAlias = (
   model: string | null | undefined,
   effort: string,
@@ -135,7 +137,27 @@ export const defaultModelAlias = (
   const normalizedEffort = effort.trim().toLowerCase();
   if (!normalizedModel) return '';
   if (!normalizedEffort && !fast) return `${normalizedModel}-alias`;
-  return `${normalizedModel}${normalizedEffort ? `-${normalizedEffort}` : ''}${fast ? '-fast' : ''}`;
+
+  let base = normalizedModel;
+
+  // 剥离原名尾部的 -fast 后缀，防止重复叠加 -fast-fast
+  if (base.toLowerCase().endsWith('-fast')) {
+    base = base.slice(0, -5);
+  }
+
+  // 剥离原名尾部已有的思考等级后缀 (如 -high, -medium, -low, -xhigh, -max, -thinking)
+  for (const known of KNOWN_ALIAS_EFFORTS) {
+    const suffix = `-${known}`;
+    if (base.toLowerCase().endsWith(suffix)) {
+      base = base.slice(0, -suffix.length);
+      break;
+    }
+  }
+
+  const parts = [base];
+  if (normalizedEffort) parts.push(normalizedEffort);
+  if (fast) parts.push('fast');
+  return parts.join('-');
 };
 
 export const uniqueModelAlias = (

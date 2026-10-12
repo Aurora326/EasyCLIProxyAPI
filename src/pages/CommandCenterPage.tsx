@@ -33,6 +33,7 @@ import {
   Zap,
 } from 'lucide-react';
 import { useCoreRuntime } from '../coreRuntime';
+import { AnimatedNumber } from '../components/AnimatedNumber';
 import { useI18n } from '../i18n';
 import openaiIcon from '../assets/icons/openai-light.svg';
 import claudeIcon from '../assets/icons/claude.svg';
@@ -564,14 +565,16 @@ export function CommandCenterPage({ onNavigate }: CommandCenterPageProps) {
         </div>
       </section>
 
-      {/* 2. 四个核心 KPI 状态卡片（带语义色柔光图标底座） */}
+      {/* 2. 四个核心 KPI 状态卡片（带平滑数字滚动与柔光交互） */}
       <section className="cc-kpis-grid">
         {/* 总请求量 */}
         <div className="cc-kpi-card kpi-blue">
           <div className="cc-kpi-header">
             <div>
               <span className="cc-kpi-title">区间总请求量</span>
-              <div className="cc-kpi-value">{usageStats.totalRequests.toLocaleString()}</div>
+              <div className="cc-kpi-value">
+                <AnimatedNumber value={usageStats.totalRequests} />
+              </div>
             </div>
             <div className="cc-kpi-icon-box blue">
               <Activity size={18} />
@@ -580,7 +583,7 @@ export function CommandCenterPage({ onNavigate }: CommandCenterPageProps) {
           <div className="cc-kpi-footer-meta">
             <span className="cc-kpi-trend">
               <ArrowUpRight size={13} />
-              成功 {usageStats.successCount.toLocaleString()} · 失败 {usageStats.failureCount}
+              成功 <AnimatedNumber value={usageStats.successCount} /> · 失败 <AnimatedNumber value={usageStats.failureCount} />
             </span>
           </div>
         </div>
@@ -591,7 +594,10 @@ export function CommandCenterPage({ onNavigate }: CommandCenterPageProps) {
             <div>
               <span className="cc-kpi-title">网关转发成功率</span>
               <div className="cc-kpi-value">
-                {usageStats.totalRequests > 0 ? usageStats.successRate.toFixed(1) : '100'}
+                <AnimatedNumber
+                  value={usageStats.totalRequests > 0 ? usageStats.successRate : 100}
+                  precision={1}
+                />
                 <span className="cc-kpi-unit">%</span>
               </div>
             </div>
@@ -602,9 +608,16 @@ export function CommandCenterPage({ onNavigate }: CommandCenterPageProps) {
           <div className="cc-kpi-footer-meta">
             <span className="cc-kpi-trend">
               错误率{' '}
-              {usageStats.totalRequests > 0
-                ? `${((usageStats.failureCount / usageStats.totalRequests) * 100).toFixed(2)}%`
-                : '0.00%'}
+              {usageStats.totalRequests > 0 ? (
+                <>
+                  <AnimatedNumber
+                    value={(usageStats.failureCount / usageStats.totalRequests) * 100}
+                    precision={2}
+                  />%
+                </>
+              ) : (
+                '0.00%'
+              )}
             </span>
           </div>
         </div>
@@ -618,12 +631,12 @@ export function CommandCenterPage({ onNavigate }: CommandCenterPageProps) {
                 {usageStats.averageLatencyMs > 0 ? (
                   usageStats.averageLatencyMs < 1000 ? (
                     <>
-                      {Math.round(usageStats.averageLatencyMs)}
+                      <AnimatedNumber value={Math.round(usageStats.averageLatencyMs)} />
                       <span className="cc-kpi-unit">ms</span>
                     </>
                   ) : (
                     <>
-                      {(usageStats.averageLatencyMs / 1000).toFixed(2)}
+                      <AnimatedNumber value={usageStats.averageLatencyMs / 1000} precision={2} />
                       <span className="cc-kpi-unit">s</span>
                     </>
                   )
@@ -649,16 +662,16 @@ export function CommandCenterPage({ onNavigate }: CommandCenterPageProps) {
               <div className="cc-kpi-value">
                 {usageStats.totalTokens >= 1_000_000 ? (
                   <>
-                    {(usageStats.totalTokens / 1_000_000).toFixed(2)}
+                    <AnimatedNumber value={usageStats.totalTokens / 1_000_000} precision={2} />
                     <span className="cc-kpi-unit">M</span>
                   </>
                 ) : usageStats.totalTokens >= 1000 ? (
                   <>
-                    {(usageStats.totalTokens / 1000).toFixed(1)}
+                    <AnimatedNumber value={usageStats.totalTokens / 1000} precision={1} />
                     <span className="cc-kpi-unit">k</span>
                   </>
                 ) : (
-                  usageStats.totalTokens.toLocaleString()
+                  <AnimatedNumber value={usageStats.totalTokens} />
                 )}
               </div>
             </div>

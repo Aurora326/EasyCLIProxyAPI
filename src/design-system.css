@@ -1886,3 +1886,54 @@ body {
   box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08), 0 1px 2px rgba(15, 23, 42, 0.04) !important;
 }
 
+/* ==========================================================================
+   页面视图切换过渡与动态数字平滑滚动动效 (Page Transitions & Number Animations)
+   ========================================================================== */
+
+/* 1. 页面视图切换平滑过渡动画 (Fade-in + Subtle Slide) */
+.console-page-transition {
+  width: 100%;
+  min-height: 100%;
+  animation: pageTransitionFadeSlide 200ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  will-change: opacity, transform;
+}
+
+@keyframes pageTransitionFadeSlide {
+  0% {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* 2. 统计数字滚动组件与高光呼吸动效 */
+.animated-counter {
+  display: inline-block;
+  font-variant-numeric: tabular-nums;
+  transition: color 250ms ease, text-shadow 250ms ease, transform 200ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.animated-counter.number-pulse-glow {
+  color: var(--brand-primary, #2563eb) !important;
+  text-shadow: 0 0 14px rgba(37, 99, 235, 0.35);
+  transform: scale(1.02);
+}
+
+/* 3. 日期与周期切换时卡片整体微弱过渡 */
+.cc-kpi-card,
+.usage-stat-card {
+  transition: transform 220ms cubic-bezier(0.16, 1, 0.3, 1), box-shadow 220ms ease, border-color 220ms ease;
+}
+
+/* 系统无障碍偏好：减少动效 */
+@media (prefers-reduced-motion: reduce) {
+  .console-page-transition {
+    animation: none !important;
+  }
+  .animated-counter {
+    transition: none !important;
+  }
+}
