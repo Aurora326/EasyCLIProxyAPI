@@ -249,6 +249,59 @@ pub(crate) async fn put_management_config_yaml(
     read_management_value(response).await.map(|_| ())
 }
 
+pub(crate) fn oauth_model_aliases_from_root<'a>(
+    root: &'a serde_norway::Mapping,
+) -> Option<&'a serde_norway::Mapping> {
+    yaml_mapping_value(root, "oauth-model-alias")
+        .and_then(serde_norway::Value::as_mapping)
+        .or_else(|| {
+            yaml_mapping_value(root, "oauth")
+                .and_then(serde_norway::Value::as_mapping)
+                .and_then(|oauth| yaml_mapping_value(oauth, "model-alias"))
+                .and_then(serde_norway::Value::as_mapping)
+        })
+}
+
+pub(crate) fn ensure_oauth_channel_aliases_mut<'a>(
+    root: &'a mut serde_norway::Mapping,
+    channel: &str,
+) -> Result<&'a mut Vec<serde_norway::Value>, String> {
+    let has_v8_oauth = yaml_mapping_value(root, "oauth")
+        .and_then(serde_norway::Value::as_mapping)
+        .is_some();
+    let has_legacy_oauth = root.contains_key(yaml_key("oauth-model-alias"));
+
+    let channel_aliases = if has_v8_oauth && !has_legacy_oauth {
+        let oauth = root
+            .entry(yaml_key("oauth"))
+            .or_insert_with(|| serde_norway::Value::Mapping(serde_norway::Mapping::new()))
+            .as_mapping_mut()
+            .ok_or_else(|| "oauth 必须是 YAML 映射".to_string())?;
+        let model_alias = oauth
+            .entry(yaml_key("model-alias"))
+            .or_insert_with(|| serde_norway::Value::Mapping(serde_norway::Mapping::new()))
+            .as_mapping_mut()
+            .ok_or_else(|| "oauth.model-alias 必须是 YAML 映射".to_string())?;
+        model_alias
+            .entry(yaml_key(channel))
+            .or_insert_with(|| serde_norway::Value::Sequence(Vec::new()))
+            .as_sequence_mut()
+            .ok_or_else(|| format!("oauth.model-alias.{channel} 必须是数组"))?
+    } else {
+        let oauth_aliases = root
+            .entry(yaml_key("oauth-model-alias"))
+            .or_insert_with(|| serde_norway::Value::Mapping(serde_norway::Mapping::new()))
+            .as_mapping_mut()
+            .ok_or_else(|| "oauth-model-alias 必须是 YAML 映射".to_string())?;
+        oauth_aliases
+            .entry(yaml_key(channel))
+            .or_insert_with(|| serde_norway::Value::Sequence(Vec::new()))
+            .as_sequence_mut()
+            .ok_or_else(|| format!("oauth-model-alias.{channel} 必须是数组"))?
+    };
+    Ok(channel_aliases)
+}
+
 pub(crate) async fn put_management_oauth_model_aliases(
     config: &GuiConfigFile,
     aliases: &serde_json::Value,
@@ -280,9 +333,13 @@ pub(crate) fn management_alias_config_changes(
         let root = document
             .as_mapping_mut()
             .ok_or_else(|| "内核配置顶层必须是 YAML 映射".to_string())?;
-        let oauth_aliases = root
-            .remove(yaml_key("oauth-model-alias"))
-            .unwrap_or_else(|| serde_norway::Value::Mapping(serde_norway::Mapping::new()));
+        let oauth_aliases = if let Some(aliases) = root.remove(yaml_key("oauth-model-alias")) {
+            aliases
+        } else if let Some(oauth) = root.get_mut(yaml_key("oauth")).and_then(serde_norway::Value::as_mapping_mut) {
+            oauth.remove(yaml_key("model-alias")).unwrap_or_else(|| serde_norway::Value::Mapping(serde_norway::Mapping::new()))
+        } else {
+            serde_norway::Value::Mapping(serde_norway::Mapping::new())
+        };
         Ok::<_, String>((document, oauth_aliases))
     };
     let (current_without_oauth, current_oauth) = split(current)?;
@@ -462,41 +519,71 @@ pub(crate) fn remove_oauth_claude_model_alias(
     alias: &str,
     managed_only: bool,
 ) -> Result<bool, String> {
-    let Some(oauth_aliases) = yaml_mapping_value_mut(root, "oauth-model-alias") else {
-        return Ok(false);
-    };
-    let oauth_aliases = oauth_aliases
-        .as_mapping_mut()
-        .ok_or_else(|| "oauth-model-alias 必须是 YAML 映射".to_string())?;
     let mut changed = false;
-    let mut empty_channels = Vec::new();
-    for (channel, entries) in oauth_aliases.iter_mut() {
-        let channel_name = channel.as_str().unwrap_or("unknown");
-        let entries = entries
-            .as_sequence_mut()
-            .ok_or_else(|| format!("oauth-model-alias.{channel_name} 必须是数组"))?;
-        let before = entries.len();
-        entries.retain(|entry| {
-            if managed_only {
-                !is_managed_claude_model_alias(entry, alias)
-            } else {
-                configured_model_identity(entry)
-                    .is_none_or(|(_, client_model, _)| !client_model.eq_ignore_ascii_case(alias))
-            }
-        });
-        if entries.len() != before {
-            changed = true;
-            if entries.is_empty() {
-                empty_channels.push(channel.clone());
+    if let Some(oauth_aliases) = yaml_mapping_value_mut(root, "oauth-model-alias") {
+        let oauth_aliases = oauth_aliases
+            .as_mapping_mut()
+            .ok_or_else(|| "oauth-model-alias 必须是 YAML 映射".to_string())?;
+        let mut empty_channels = Vec::new();
+        for (channel, entries) in oauth_aliases.iter_mut() {
+            let channel_name = channel.as_str().unwrap_or("unknown");
+            let entries = entries
+                .as_sequence_mut()
+                .ok_or_else(|| format!("oauth-model-alias.{channel_name} 必须是数组"))?;
+            let before = entries.len();
+            entries.retain(|entry| {
+                if managed_only {
+                    !is_managed_claude_model_alias(entry, alias)
+                } else {
+                    configured_model_identity(entry)
+                        .is_none_or(|(_, client_model, _)| !client_model.eq_ignore_ascii_case(alias))
+                }
+            });
+            if entries.len() != before {
+                changed = true;
+                if entries.is_empty() {
+                    empty_channels.push(channel.clone());
+                }
             }
         }
+        for channel in empty_channels {
+            oauth_aliases.remove(&channel);
+        }
+        if changed && oauth_aliases.is_empty() {
+            root.remove(yaml_key("oauth-model-alias"));
+        }
     }
-    for channel in empty_channels {
-        oauth_aliases.remove(&channel);
-    }
-    let remove_oauth_section = changed && oauth_aliases.is_empty();
-    if remove_oauth_section {
-        root.remove(yaml_key("oauth-model-alias"));
+    if let Some(oauth) = yaml_mapping_value_mut(root, "oauth").and_then(serde_norway::Value::as_mapping_mut) {
+        if let Some(model_alias) = yaml_mapping_value_mut(oauth, "model-alias") {
+            let model_alias = model_alias
+                .as_mapping_mut()
+                .ok_or_else(|| "oauth.model-alias 必须是 YAML 映射".to_string())?;
+            let mut empty_channels = Vec::new();
+            for (channel, entries) in model_alias.iter_mut() {
+                let channel_name = channel.as_str().unwrap_or("unknown");
+                let entries = entries
+                    .as_sequence_mut()
+                    .ok_or_else(|| format!("oauth.model-alias.{channel_name} 必须是数组"))?;
+                let before = entries.len();
+                entries.retain(|entry| {
+                    if managed_only {
+                        !is_managed_claude_model_alias(entry, alias)
+                    } else {
+                        configured_model_identity(entry)
+                            .is_none_or(|(_, client_model, _)| !client_model.eq_ignore_ascii_case(alias))
+                    }
+                });
+                if entries.len() != before {
+                    changed = true;
+                    if entries.is_empty() {
+                        empty_channels.push(channel.clone());
+                    }
+                }
+            }
+            for channel in empty_channels {
+                model_alias.remove(&channel);
+            }
+        }
     }
     Ok(changed)
 }
@@ -553,8 +640,7 @@ pub(crate) fn configured_managed_claude_alias_matches(
             .any(matches)
     });
     configured_provider_alias
-        || yaml_mapping_value(root, "oauth-model-alias")
-            .and_then(serde_norway::Value::as_mapping)
+        || oauth_model_aliases_from_root(root)
             .into_iter()
             .flat_map(|channels| channels.values())
             .filter_map(serde_norway::Value::as_sequence)
@@ -706,9 +792,7 @@ fn resolve_claude_desktop_alias_source(
                 }
             }
         }
-        if let Some(channels) =
-            yaml_mapping_value(root, "oauth-model-alias").and_then(serde_norway::Value::as_mapping)
-        {
+        if let Some(channels) = oauth_model_aliases_from_root(root) {
             for (channel, models) in channels {
                 let (Some(channel), Some(models)) = (channel.as_str(), models.as_sequence()) else {
                     continue;
@@ -746,16 +830,7 @@ fn append_claude_desktop_model_alias(
             (models, model)
         }
         ClaudeDesktopAliasSource::OAuth { channel, mut model } => {
-            let aliases = root
-                .entry(yaml_key("oauth-model-alias"))
-                .or_insert_with(|| serde_norway::Value::Mapping(serde_norway::Mapping::new()))
-                .as_mapping_mut()
-                .ok_or("oauth-model-alias 必须是 YAML 映射")?;
-            let models = aliases
-                .entry(yaml_key(&channel))
-                .or_insert_with(|| serde_norway::Value::Sequence(Vec::new()))
-                .as_sequence_mut()
-                .ok_or_else(|| format!("oauth-model-alias.{channel} 必须是数组"))?;
+            let models = ensure_oauth_channel_aliases_mut(root, &channel)?;
             model.insert(yaml_key("fork"), serde_norway::Value::Bool(true));
             if oauth_alias_channel(&channel).is_some_and(|channel| channel.force_mapping) {
                 model.insert(yaml_key("force-mapping"), serde_norway::Value::Bool(true));
@@ -784,16 +859,7 @@ pub(crate) fn append_managed_oauth_model_alias(
     alias: &str,
     force_mapping: bool,
 ) -> Result<(), String> {
-    let oauth_aliases = root
-        .entry(yaml_key("oauth-model-alias"))
-        .or_insert_with(|| serde_norway::Value::Mapping(serde_norway::Mapping::new()))
-        .as_mapping_mut()
-        .ok_or_else(|| "oauth-model-alias 必须是 YAML 映射".to_string())?;
-    let channel_aliases = oauth_aliases
-        .entry(yaml_key(channel))
-        .or_insert_with(|| serde_norway::Value::Sequence(Vec::new()))
-        .as_sequence_mut()
-        .ok_or_else(|| format!("oauth-model-alias.{channel} 必须是数组"))?;
+    let channel_aliases = ensure_oauth_channel_aliases_mut(root, channel)?;
     let display_name = managed_claude_alias_display_name(alias)
         .ok_or_else(|| format!("不支持的 Claude 托管别名: {alias}"))?;
     let mut alias_mapping = serde_norway::Mapping::new();
@@ -1205,10 +1271,7 @@ pub(crate) fn thinking_aliases_from_value(
         .as_mapping()
         .ok_or_else(|| "内核配置顶层必须是 YAML 映射".to_string())?;
     let mut entries = Vec::new();
-    if let Some(oauth_aliases) = yaml_mapping_value(root, "oauth-model-alias") {
-        let oauth_aliases = oauth_aliases
-            .as_mapping()
-            .ok_or_else(|| "oauth-model-alias 必须是 YAML 映射".to_string())?;
+    if let Some(oauth_aliases) = oauth_model_aliases_from_root(root) {
         for (channel, channel_aliases) in oauth_aliases {
             let channel = channel.as_str().unwrap_or("unknown");
             let channel_aliases = channel_aliases
@@ -1302,10 +1365,7 @@ pub(crate) fn speed_aliases_from_value(
         .as_mapping()
         .ok_or_else(|| "内核配置顶层必须是 YAML 映射".to_string())?;
     let mut entries = Vec::new();
-    if let Some(oauth_aliases) = yaml_mapping_value(root, "oauth-model-alias") {
-        let oauth_aliases = oauth_aliases
-            .as_mapping()
-            .ok_or_else(|| "oauth-model-alias 必须是 YAML 映射".to_string())?;
+    if let Some(oauth_aliases) = oauth_model_aliases_from_root(root) {
         for (channel, channel_aliases) in oauth_aliases {
             let channel = channel.as_str().unwrap_or("unknown");
             let channel_aliases = channel_aliases
@@ -1478,29 +1538,31 @@ fn alias_override_params<'a>(
     alias: &'a str,
     protocol: &'a str,
 ) -> impl Iterator<Item = (&'a serde_norway::Mapping, bool)> {
-    ["override-raw", "override"]
-        .into_iter()
-        .flat_map(move |section| {
-            nested_yaml_value(root, &["payload", section])
-                .and_then(serde_norway::Value::as_sequence)
-                .into_iter()
-                .flatten()
-                .rev()
-                .filter_map(move |rule| {
-                    let rule = rule.as_mapping()?;
-                    let models = yaml_mapping_value(rule, "models")?.as_sequence()?;
-                    if !models
-                        .iter()
-                        .any(|model| thinking_payload_model_matches(model, alias, protocol))
-                    {
-                        return None;
+    let search_roots: [&[&str]; 2] = [&["requests", "payload"], &["payload"]];
+    let mut results = Vec::new();
+    for base in search_roots {
+        for section in ["override-raw", "override"] {
+            let mut path = base.to_vec();
+            path.push(section);
+            if let Some(seq) = nested_yaml_value(root, &path).and_then(serde_norway::Value::as_sequence) {
+                for rule in seq.iter().rev() {
+                    let Some(rule) = rule.as_mapping() else {
+                        continue;
+                    };
+                    let Some(models) = yaml_mapping_value(rule, "models").and_then(serde_norway::Value::as_sequence) else {
+                        continue;
+                    };
+                    if !models.iter().any(|model| thinking_payload_model_matches(model, alias, protocol)) {
+                        continue;
                     }
-                    Some((
-                        yaml_mapping_value(rule, "params")?.as_mapping()?,
-                        section == "override-raw",
-                    ))
-                })
-        })
+                    if let Some(params) = yaml_mapping_value(rule, "params").and_then(serde_norway::Value::as_mapping) {
+                        results.push((params, section == "override-raw"));
+                    }
+                }
+            }
+        }
+    }
+    results.into_iter()
 }
 
 fn alias_payload_string(params: &serde_norway::Mapping, key: &str, raw: bool) -> Option<String> {
@@ -1735,11 +1797,29 @@ pub(crate) fn append_alias_payload_override(
     if params_mapping.is_empty() {
         return Ok(());
     }
-    let payload = root
-        .entry(yaml_key("payload"))
-        .or_insert_with(|| serde_norway::Value::Mapping(serde_norway::Mapping::new()))
-        .as_mapping_mut()
-        .ok_or_else(|| "payload 必须是 YAML 映射".to_string())?;
+    let has_requests = yaml_mapping_value(root, "requests")
+        .and_then(serde_norway::Value::as_mapping)
+        .is_some();
+    let has_legacy_payload = root.contains_key(yaml_key("payload"));
+
+    let payload = if has_requests && !has_legacy_payload {
+        let requests = root
+            .entry(yaml_key("requests"))
+            .or_insert_with(|| serde_norway::Value::Mapping(serde_norway::Mapping::new()))
+            .as_mapping_mut()
+            .ok_or_else(|| "requests 必须是 YAML 映射".to_string())?;
+        requests
+            .entry(yaml_key("payload"))
+            .or_insert_with(|| serde_norway::Value::Mapping(serde_norway::Mapping::new()))
+            .as_mapping_mut()
+            .ok_or_else(|| "requests.payload 必须是 YAML 映射".to_string())?
+    } else {
+        root
+            .entry(yaml_key("payload"))
+            .or_insert_with(|| serde_norway::Value::Mapping(serde_norway::Mapping::new()))
+            .as_mapping_mut()
+            .ok_or_else(|| "payload 必须是 YAML 映射".to_string())?
+    };
     let override_rules = payload
         .entry(yaml_key("override"))
         .or_insert_with(|| serde_norway::Value::Sequence(Vec::new()))
@@ -1828,16 +1908,7 @@ pub(crate) fn append_oauth_model_alias(
     alias: &str,
     force_mapping: bool,
 ) -> Result<(), String> {
-    let oauth_aliases = root
-        .entry(yaml_key("oauth-model-alias"))
-        .or_insert_with(|| serde_norway::Value::Mapping(serde_norway::Mapping::new()))
-        .as_mapping_mut()
-        .ok_or_else(|| "oauth-model-alias 必须是 YAML 映射".to_string())?;
-    let channel_aliases = oauth_aliases
-        .entry(yaml_key(channel))
-        .or_insert_with(|| serde_norway::Value::Sequence(Vec::new()))
-        .as_sequence_mut()
-        .ok_or_else(|| format!("oauth-model-alias.{channel} 必须是数组"))?;
+    let channel_aliases = ensure_oauth_channel_aliases_mut(root, channel)?;
     let mut alias_mapping = serde_norway::Mapping::new();
     alias_mapping.insert(
         yaml_key("name"),
@@ -2034,48 +2105,77 @@ pub(crate) fn remove_oauth_model_alias(
     alias: &str,
     target_channel: Option<&str>,
 ) -> Result<bool, String> {
-    let Some(oauth_aliases) = yaml_mapping_value_mut(root, "oauth-model-alias") else {
-        return Ok(false);
-    };
-    let oauth_aliases = oauth_aliases
-        .as_mapping_mut()
-        .ok_or_else(|| "oauth-model-alias 必须是 YAML 映射".to_string())?;
     let mut removed = false;
-    let mut empty_channels = Vec::new();
-    for (channel, entries) in oauth_aliases.iter_mut() {
-        let channel_name = channel.as_str().unwrap_or("unknown");
-        if target_channel.is_some_and(|target| !target.eq_ignore_ascii_case(channel_name)) {
-            continue;
+    if let Some(oauth_aliases) = yaml_mapping_value_mut(root, "oauth-model-alias") {
+        let oauth_aliases = oauth_aliases
+            .as_mapping_mut()
+            .ok_or_else(|| "oauth-model-alias 必须是 YAML 映射".to_string())?;
+        let mut empty_channels = Vec::new();
+        for (channel, entries) in oauth_aliases.iter_mut() {
+            let channel_name = channel.as_str().unwrap_or("unknown");
+            if target_channel.is_some_and(|target| !target.eq_ignore_ascii_case(channel_name)) {
+                continue;
+            }
+            let entries = entries
+                .as_sequence_mut()
+                .ok_or_else(|| format!("oauth-model-alias.{channel_name} 必须是数组"))?;
+            entries.retain(|entry| {
+                let matches = entry
+                    .as_mapping()
+                    .and_then(|mapping| yaml_mapping_value(mapping, "alias"))
+                    .and_then(serde_norway::Value::as_str)
+                    .is_some_and(|value| value.trim().eq_ignore_ascii_case(alias));
+                removed |= matches;
+                !matches
+            });
+            if entries.is_empty() {
+                empty_channels.push(channel.clone());
+            }
         }
-        let entries = entries
-            .as_sequence_mut()
-            .ok_or_else(|| format!("oauth-model-alias.{channel_name} 必须是数组"))?;
-        entries.retain(|entry| {
-            let matches = entry
-                .as_mapping()
-                .and_then(|mapping| yaml_mapping_value(mapping, "alias"))
-                .and_then(serde_norway::Value::as_str)
-                .is_some_and(|value| value.trim().eq_ignore_ascii_case(alias));
-            removed |= matches;
-            !matches
-        });
-        if entries.is_empty() {
-            empty_channels.push(channel.clone());
+        for channel in empty_channels {
+            oauth_aliases.remove(&channel);
+        }
+        if oauth_aliases.is_empty() {
+            root.remove(yaml_key("oauth-model-alias"));
         }
     }
-    for channel in empty_channels {
-        oauth_aliases.remove(&channel);
-    }
-    let remove_section = oauth_aliases.is_empty();
-    if remove_section {
-        root.remove(yaml_key("oauth-model-alias"));
+    if let Some(oauth) = yaml_mapping_value_mut(root, "oauth").and_then(serde_norway::Value::as_mapping_mut) {
+        if let Some(model_alias) = yaml_mapping_value_mut(oauth, "model-alias") {
+            let model_alias = model_alias
+                .as_mapping_mut()
+                .ok_or_else(|| "oauth.model-alias 必须是 YAML 映射".to_string())?;
+            let mut empty_channels = Vec::new();
+            for (channel, entries) in model_alias.iter_mut() {
+                let channel_name = channel.as_str().unwrap_or("unknown");
+                if target_channel.is_some_and(|target| !target.eq_ignore_ascii_case(channel_name)) {
+                    continue;
+                }
+                let entries = entries
+                    .as_sequence_mut()
+                    .ok_or_else(|| format!("oauth.model-alias.{channel_name} 必须是数组"))?;
+                entries.retain(|entry| {
+                    let matches = entry
+                        .as_mapping()
+                        .and_then(|mapping| yaml_mapping_value(mapping, "alias"))
+                        .and_then(serde_norway::Value::as_str)
+                        .is_some_and(|value| value.trim().eq_ignore_ascii_case(alias));
+                    removed |= matches;
+                    !matches
+                });
+                if entries.is_empty() {
+                    empty_channels.push(channel.clone());
+                }
+            }
+            for channel in empty_channels {
+                model_alias.remove(&channel);
+            }
+        }
     }
     Ok(removed)
 }
 
 pub(crate) fn configured_model_alias_exists(root: &serde_norway::Mapping, alias: &str) -> bool {
-    let oauth_exists = yaml_mapping_value(root, "oauth-model-alias")
-        .and_then(serde_norway::Value::as_mapping)
+    let oauth_exists = oauth_model_aliases_from_root(root)
         .is_some_and(|channels| {
             channels.values().any(|entries| {
                 entries.as_sequence().is_some_and(|entries| {
@@ -2192,9 +2292,7 @@ impl AliasPayloadScope {
 
     fn after_removal(root: &serde_norway::Mapping, alias: &str, channel: Option<&str>) -> Self {
         let mut preserved_protocols = BTreeSet::new();
-        if let Some(channels) =
-            yaml_mapping_value(root, "oauth-model-alias").and_then(serde_norway::Value::as_mapping)
-        {
+        if let Some(channels) = oauth_model_aliases_from_root(root) {
             for (channel, entries) in channels {
                 let matches = entries.as_sequence().is_some_and(|entries| {
                     entries.iter().any(|entry| {
@@ -2263,15 +2361,11 @@ impl AliasPayloadScope {
     }
 }
 
-fn remove_alias_payload_options(
-    root: &mut serde_norway::Mapping,
+fn remove_alias_payload_options_from_payload(
+    payload: &mut serde_norway::Mapping,
     alias: &str,
     scope: &AliasPayloadScope,
 ) -> Result<(), String> {
-    let Some(payload) = yaml_mapping_value_mut(root, "payload") else {
-        return Ok(());
-    };
-    let payload = payload.as_mapping_mut().ok_or("payload 必须是 YAML 映射")?;
     for section in ["override", "override-raw"] {
         let Some(rules) = yaml_mapping_value_mut(payload, section) else {
             continue;
@@ -2334,8 +2428,29 @@ fn remove_alias_payload_options(
             payload.remove(yaml_key(section));
         }
     }
-    if payload.is_empty() {
-        root.remove(yaml_key("payload"));
+    Ok(())
+}
+
+fn remove_alias_payload_options(
+    root: &mut serde_norway::Mapping,
+    alias: &str,
+    scope: &AliasPayloadScope,
+) -> Result<(), String> {
+    if let Some(payload) = yaml_mapping_value_mut(root, "payload") {
+        let payload = payload.as_mapping_mut().ok_or("payload 必须是 YAML 映射")?;
+        remove_alias_payload_options_from_payload(payload, alias, scope)?;
+        if payload.is_empty() {
+            root.remove(yaml_key("payload"));
+        }
+    }
+    if let Some(requests) = yaml_mapping_value_mut(root, "requests").and_then(serde_norway::Value::as_mapping_mut) {
+        if let Some(payload) = yaml_mapping_value_mut(requests, "payload") {
+            let payload = payload.as_mapping_mut().ok_or("requests.payload 必须是 YAML 映射")?;
+            remove_alias_payload_options_from_payload(payload, alias, scope)?;
+            if payload.is_empty() {
+                requests.remove(yaml_key("payload"));
+            }
+        }
     }
     Ok(())
 }

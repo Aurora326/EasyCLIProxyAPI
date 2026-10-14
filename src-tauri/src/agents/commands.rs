@@ -572,7 +572,8 @@ pub(crate) async fn create_thinking_alias(
     }
 
     if available_models.iter().any(|model| {
-        model.name.eq_ignore_ascii_case(&alias)
+        !model.is_alias
+            && model.name.eq_ignore_ascii_case(&alias)
             && !original_alias
                 .as_deref()
                 .is_some_and(|original| original.eq_ignore_ascii_case(&alias))
@@ -665,7 +666,7 @@ pub(crate) async fn create_speed_alias(
     }
     if available_models
         .iter()
-        .any(|model| model.name.eq_ignore_ascii_case(&alias))
+        .any(|model| !model.is_alias && model.name.eq_ignore_ascii_case(&alias))
     {
         return Err(format!("{alias} 已经是实际模型 ID，不能再作为别名"));
     }
@@ -1391,10 +1392,7 @@ pub(crate) fn mark_configured_agent_model_aliases(
         }
     }
 
-    if let Some(oauth_aliases) = yaml_mapping_value(root, "oauth-model-alias") {
-        let oauth_aliases = oauth_aliases
-            .as_mapping()
-            .ok_or_else(|| "oauth-model-alias 必须是 YAML 映射".to_string())?;
+    if let Some(oauth_aliases) = oauth_model_aliases_from_root(root) {
         for entries in oauth_aliases.values() {
             let Some(entries) = entries.as_sequence() else {
                 continue;

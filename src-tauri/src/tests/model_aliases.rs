@@ -721,3 +721,59 @@ fn devin_aliases_use_the_devin_channel_without_unsupported_overrides() {
         assert!(resolved_oauth_alias_sources("{}\n", &definitions, &available_models, capability).unwrap().is_empty());
     }
 }
+
+#[test]
+fn v8_layout_aliases_and_payload_overrides_are_supported() {
+    let v8_yaml = r#"config-version: 8
+requests:
+  payload:
+    override:
+      - models:
+          - name: claude-fable-5-1
+            protocol: antigravity
+        params:
+          generationConfig.thinkingConfig.thinkingLevel: high
+oauth:
+  model-alias:
+    antigravity:
+      - name: gemini-3.8-flash-high
+        alias: claude-fable-5-1
+        fork: true
+        force-mapping: true
+"#;
+    let aliases = thinking_aliases_from_yaml(v8_yaml).unwrap();
+    assert_eq!(aliases.len(), 1);
+    assert_eq!(aliases[0].source_model, "gemini-3.8-flash-high");
+    assert_eq!(aliases[0].alias, "claude-fable-5-1");
+    assert_eq!(aliases[0].effort.as_deref(), Some("high"));
+    assert_eq!(aliases[0].oauth_channel.as_deref(), Some("antigravity"));
+
+    let source = test_oauth_thinking_source("antigravity", "gemini-3.8-flash-high");
+    let added = add_model_alias_to_yaml(v8_yaml, &source, "claude-opus-5", "high", false).unwrap();
+    assert!(added.contains("claude-opus-5"));
+    let added_aliases = thinking_aliases_from_yaml(&added).unwrap();
+    assert_eq!(added_aliases.len(), 2);
+    let opus = added_aliases.iter().find(|a| a.alias == "claude-opus-5").unwrap();
+    assert_eq!(opus.effort.as_deref(), Some("high"));
+
+    let removed = remove_thinking_alias_from_yaml_for_channel(&added, "claude-fable-5-1", Some("antigravity")).unwrap();
+    let remaining_aliases = thinking_aliases_from_yaml(&removed).unwrap();
+    assert_eq!(remaining_aliases.len(), 1);
+    assert_eq!(remaining_aliases[0].alias, "claude-opus-5");
+
+    let definitions = vec![test_oauth_definition_set("antigravity", &["gemini-3.8-flash-high"])];
+    let context = model_alias_edit_context(&removed, "claude-opus-5", &definitions).unwrap();
+    assert_eq!(context.source.model, "gemini-3.8-flash-high");
+    assert_eq!(context.effort.as_deref(), Some("high"));
+
+    let edited = edit_model_alias_in_yaml(
+        &removed,
+        "claude-opus-5",
+        &source,
+        "claude-opus-5",
+        "low",
+        false,
+    ).unwrap();
+    let edited_aliases = thinking_aliases_from_yaml(&edited).unwrap();
+    assert_eq!(edited_aliases[0].effort.as_deref(), Some("low"));
+}

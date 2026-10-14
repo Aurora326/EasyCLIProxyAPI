@@ -39,6 +39,11 @@ pub(crate) fn model_alias_config_revision(content: &str) -> Result<String, Strin
     {
         root.remove("oauth-model-alias");
     }
+    if let Some(oauth) = root.get_mut("oauth").and_then(serde_json::Value::as_object_mut) {
+        if oauth.get("model-alias").and_then(serde_json::Value::as_object).is_some_and(|a| a.is_empty()) {
+            oauth.remove("model-alias");
+        }
+    }
     value.sort_all_objects();
     Ok(sha256_bytes(
         serde_json::to_string(&value)
@@ -139,10 +144,7 @@ fn editable_model_alias(
             }
         }
     }
-    if let Some(channels) = yaml_mapping_value(root, "oauth-model-alias") {
-        let channels = channels
-            .as_mapping()
-            .ok_or("oauth-model-alias 必须是 YAML 映射")?;
+    if let Some(channels) = oauth_model_aliases_from_root(root) {
         for (channel_name, models) in channels {
             let models = models
                 .as_sequence()
@@ -360,15 +362,9 @@ pub(crate) fn edit_model_alias_in_yaml(
             .and_then(|provider| yaml_mapping_value_mut(provider, "models"))
             .and_then(serde_norway::Value::as_sequence_mut)
             .ok_or("模型提供商已经变化，请刷新后重试")?,
-        ThinkingAliasSourceLocation::Oauth { channel, .. } => root
-            .entry(yaml_key("oauth-model-alias"))
-            .or_insert_with(|| serde_norway::Value::Mapping(Default::default()))
-            .as_mapping_mut()
-            .ok_or("oauth-model-alias 必须是 YAML 映射")?
-            .entry(yaml_key(channel))
-            .or_insert_with(|| serde_norway::Value::Sequence(Vec::new()))
-            .as_sequence_mut()
-            .ok_or("oauth-model-alias 的通道配置必须是数组")?,
+        ThinkingAliasSourceLocation::Oauth { channel, .. } => {
+            ensure_oauth_channel_aliases_mut(root, channel)?
+        }
     };
     if same_group {
         let model = models
@@ -433,10 +429,29 @@ fn edit_alias_payload(
     let protocol = &edit.source.protocol;
     let mut found_effort = false;
     let mut found_fast = false;
-    let payload = root
-        .entry(yaml_key("payload"))
-        .or_insert_with(|| serde_norway::Value::Mapping(Default::default()));
-    let payload = payload.as_mapping_mut().ok_or("payload 必须是 YAML 映射")?;
+    let has_requests_payload = yaml_mapping_value(root, "requests")
+        .and_then(serde_norway::Value::as_mapping)
+        .is_some_and(|r| r.contains_key(yaml_key("payload")));
+    let has_legacy_payload = root.contains_key(yaml_key("payload"));
+
+    let payload = if has_requests_payload || (!has_legacy_payload && root.contains_key(yaml_key("requests"))) {
+        let requests = root
+            .entry(yaml_key("requests"))
+            .or_insert_with(|| serde_norway::Value::Mapping(Default::default()))
+            .as_mapping_mut()
+            .ok_or("requests 必须是 YAML 映射")?;
+        requests
+            .entry(yaml_key("payload"))
+            .or_insert_with(|| serde_norway::Value::Mapping(Default::default()))
+            .as_mapping_mut()
+            .ok_or("requests.payload 必须是 YAML 映射")?
+    } else {
+        root
+            .entry(yaml_key("payload"))
+            .or_insert_with(|| serde_norway::Value::Mapping(Default::default()))
+            .as_mapping_mut()
+            .ok_or("payload 必须是 YAML 映射")?
+    };
     for section in [
         "default",
         "default-raw",
