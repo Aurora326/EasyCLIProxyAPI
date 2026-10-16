@@ -257,8 +257,8 @@ describe('quotaRowsFor', () => {
     });
 
     expect(rows.map((row) => row.label)).toEqual([
-      'Gemini Pro · 5h',
-      'Gemini Pro · weekly',
+      'Gemini Pro · 5 小时额度',
+      'Gemini Pro · 每周额度',
     ]);
   });
 

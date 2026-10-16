@@ -178,15 +178,38 @@ export function computeWindowStartMs(resetAtMs?: number, label?: string): number
   return Math.max(0, Date.now() - duration);
 }
 
+/**
+ * 从授权凭据对象或文件名中提取账号标识（通常为邮箱或账号名），与 usage.db 中的 source 字段匹配
+ */
+export function extractAuthSource(file?: Record<string, unknown> | null, name?: string): string | undefined {
+  if (!file && !name) return undefined;
+  if (file) {
+    for (const key of ['email', 'account', 'user_email', 'userEmail']) {
+      const val = file[key];
+      if (typeof val === 'string' && val.trim()) return val.trim();
+    }
+  }
+  const targetName = name || (typeof file?.name === 'string' ? file.name : '');
+  if (targetName) {
+    const cleanName = targetName.replace(/\.json$/i, '');
+    const stripped = cleanName.replace(/^(?:antigravity|codex|claude|kimi|xai|devin)-+/i, '');
+    const emailMatch = stripped.match(/([a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+(?:\.[a-zA-Z0-9-]+)+)/);
+    if (emailMatch) return emailMatch[1];
+  }
+  return undefined;
+}
+
 const usageWindowCache = new Map<string, { timestamp: number; models: WindowUsageCategory[] }>();
 const activeUsageQueries = new Map<string, Promise<WindowUsageCategory[]>>();
 
 export async function fetchWindowUsageModels(
   provider: QuotaProvider | null | undefined,
-  windowStartMs: number
+  windowStartMs: number,
+  source?: string
 ): Promise<WindowUsageCategory[]> {
   if (!isTauri() || !provider) return [];
-  const cacheKey = `${provider}:${windowStartMs}`;
+  const normalizedSource = source?.trim() || '';
+  const cacheKey = `${provider}:${normalizedSource}:${windowStartMs}`;
   const now = Date.now();
   const cached = usageWindowCache.get(cacheKey);
   if (cached && now - cached.timestamp < 15_000) {
@@ -202,6 +225,7 @@ export async function fetchWindowUsageModels(
         query: {
           start: new Date(windowStartMs).toISOString(),
           provider,
+          source: normalizedSource || undefined,
           failed: false,
         },
       });
@@ -242,8 +266,12 @@ export function extractConsumedTokens(
 
 /**
  * 计算预估额度：
- * 优先依据本地 usage.db 中该窗口内的真实 Token 消耗动态反推总额（方案 B）；
- * 若本周期刚重置、尚未消耗（100%）或本地无调用记录，则以官方标准基准平滑兜底。
+ * 1. 采用置信度加权（Bayesian Blending）平滑过渡：
+ *    - 当已消耗极低（< 2% 或剩余 > 98%）时，样本严重不足、除法放大误差极大，此时完全使用官方基准（Baseline）；
+ *    - 当已消耗在 2% ~ 15% 之间时，进行置信度加权融合，基准逐步平滑过渡到动态反推；
+ *    - 当已消耗 >= 15% 时，完全采用真实消耗反推值。
+ * 2. 异常离群保护（Sanity Guard）：
+ *    - 设定反推总额相对于官方基准的合理倍数（0.2x ~ 3.5x），避免多账号串流或统计偏差引发荒谬天文数字（如 18B）。
  */
 export function calculateQuotaEstimate(
   provider: QuotaProvider | null | undefined,
@@ -262,20 +290,37 @@ export function calculateQuotaEstimate(
   }
 
   const fraction = Math.max(0, Math.min(1, remainingPercent / 100));
-  const usedPercent = 100 - remainingPercent;
+  const usedPercent = Math.max(0, 100 - remainingPercent);
 
-  // 方案 B：如果本地在当前窗口内记录了真实调用消耗，且官方显示已有比例消耗（>= 0.5%）
-  // 则依据真实使用数据反推实际动态总额！
+  // 门槛 1：如果本地在当前窗口内记录了真实调用消耗，且已消耗比例达到统计学意义门槛（>= 2%）
   if (
     actualConsumedTokens !== undefined
     && actualConsumedTokens > 0
-    && usedPercent >= 0.5
+    && usedPercent >= 2.0
   ) {
     const usedFraction = usedPercent / 100;
-    const dynamicTotalTokens = actualConsumedTokens / usedFraction;
+    const rawDynamicTotal = actualConsumedTokens / usedFraction;
+
+    // 门槛 2：异常离群钳位保护（防范异常暴涨，例如不得超出官方标准基准的 3.5 倍，亦不低于 0.2 倍）
+    const maxAllowedTotal = baseline.baseTokens * 3.5;
+    const minAllowedTotal = baseline.baseTokens * 0.2;
+    const isClamped = rawDynamicTotal > maxAllowedTotal || rawDynamicTotal < minAllowedTotal;
+    const boundedDynamicTotal = Math.max(minAllowedTotal, Math.min(maxAllowedTotal, rawDynamicTotal));
+
+    // 门槛 3：在 2% ~ 15% 的低消耗区间进行置信度加权平滑，防止临界点阶跃突变
+    const confidenceWeight = Math.min(1.0, Math.max(0, (usedPercent - 2.0) / 13.0));
+    const dynamicTotalTokens = (1.0 - confidenceWeight) * baseline.baseTokens + confidenceWeight * boundedDynamicTotal;
+
     const estimatedTokens = dynamicTotalTokens * fraction;
     // 美金价值按照模型基准价格比例等比动态折算
     const estimatedCostUsd = baseline.baseUsd * (dynamicTotalTokens / baseline.baseTokens) * fraction;
+
+    let tooltipExtra = '';
+    if (confidenceWeight < 1.0) {
+      tooltipExtra = '，已融合官方基准平滑过渡';
+    } else if (isClamped) {
+      tooltipExtra = '，已应用安全上限防抖保护';
+    }
 
     return {
       estimatedTokens,
@@ -285,13 +330,17 @@ export function calculateQuotaEstimate(
       isDynamic: true,
       actualConsumedTokens,
       dynamicTotalTokens,
-      tooltip: `预估剩余约 ${formatTokenCount(estimatedTokens)}（基于本地实际消耗 ${formatTokenCount(actualConsumedTokens)} 动态反推，周期总额约 ${formatTokenCount(dynamicTotalTokens)}）`,
+      tooltip: `预估剩余约 ${formatTokenCount(estimatedTokens)}（基于本地实际消耗 ${formatTokenCount(actualConsumedTokens)} 动态反推，周期总额约 ${formatTokenCount(dynamicTotalTokens)}${tooltipExtra}）`,
     };
   }
 
-  // 兜底：刚重置、尚未消耗（100%）或本地尚无请求记录时，使用官方标准容量基准
+  // 兜底：刚重置、尚未消耗（100%）、消耗比例极低（< 2%）或本地尚无请求记录时，使用官方标准容量基准
   const estimatedTokens = baseline.baseTokens * fraction;
   const estimatedCostUsd = baseline.baseUsd * fraction;
+
+  const lowSampleHint = (actualConsumedTokens && actualConsumedTokens > 0 && usedPercent < 2.0)
+    ? '，当前消耗比例极低已自动采用官方基准以避免放大误差'
+    : '';
 
   return {
     estimatedTokens,
@@ -299,6 +348,6 @@ export function calculateQuotaEstimate(
     estimatedCostUsd,
     estimatedCostUsdFormatted: formatUsdAmount(estimatedCostUsd),
     isDynamic: false,
-    tooltip: `预估剩余约 ${formatTokenCount(estimatedTokens)}（基于官方标准基准折算，周期基准总额约 ${formatTokenCount(baseline.baseTokens)}）`,
+    tooltip: `预估剩余约 ${formatTokenCount(estimatedTokens)}（基于官方标准基准折算，周期基准总额约 ${formatTokenCount(baseline.baseTokens)}${lowSampleHint}）`,
   };
 }

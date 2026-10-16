@@ -46,6 +46,7 @@ import {
 import {
   calculateQuotaEstimate,
   computeWindowStartMs,
+  extractAuthSource,
   extractConsumedTokens,
   fetchWindowUsageModels,
   getStoredQuotaDisplayMode,
@@ -140,6 +141,7 @@ function AuthFileQuotaSummary({
   const now = useQuotaClock() + (quota.serverTimeOffsetMs ?? 0);
   const provider = file ? quotaProviderForFile(file) : undefined;
   const displayMode = getStoredQuotaDisplayMode();
+  const source = extractAuthSource(file, name);
 
   const [windowUsageModels, setWindowUsageModels] = useState<Record<string, WindowUsageCategory[]>>({});
 
@@ -149,8 +151,8 @@ function AuthFileQuotaSummary({
 
     quota.rows.forEach(async (row) => {
       const windowStartMs = computeWindowStartMs(row.resetAtMs, row.label);
-      const key = `${row.label}-${windowStartMs}`;
-      const models = await fetchWindowUsageModels(provider, windowStartMs);
+      const key = `${source || ''}-${row.label}-${windowStartMs}`;
+      const models = await fetchWindowUsageModels(provider, windowStartMs, source);
       if (!cancelled && models.length > 0) {
         setWindowUsageModels((prev) => ({
           ...prev,
@@ -162,7 +164,7 @@ function AuthFileQuotaSummary({
     return () => {
       cancelled = true;
     };
-  }, [quota.status, quota.rows, provider, displayMode]);
+  }, [quota.status, quota.rows, provider, displayMode, source]);
 
   if (quota.status === 'loading') {
     return (
@@ -190,7 +192,7 @@ function AuthFileQuotaSummary({
           {quota.rows.map((row, index) => {
             const reset = formatQuotaReset(row.resetAtMs, row.reset, locale, now);
             const windowStartMs = computeWindowStartMs(row.resetAtMs, row.label);
-            const models = windowUsageModels[`${row.label}-${windowStartMs}`];
+            const models = windowUsageModels[`${source || ''}-${row.label}-${windowStartMs}`];
             const actualTokens = extractConsumedTokens(models, provider, row.label);
             const estimate = displayMode === 'estimate'
               ? calculateQuotaEstimate(provider, row.label, row.remainingPercent, row.detail, actualTokens)

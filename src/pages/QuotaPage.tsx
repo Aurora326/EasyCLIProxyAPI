@@ -7,6 +7,7 @@ import { canResetCodexQuota, resetCodexQuotaWithConfirmation } from '../services
 import {
   calculateQuotaEstimate,
   computeWindowStartMs,
+  extractAuthSource,
   extractConsumedTokens,
   fetchWindowUsageModels,
   getStoredQuotaDisplayMode,
@@ -245,6 +246,7 @@ export function QuotaCard({
   const provider = providerForFile(file);
   const name = fileName(file);
   const disabled = readBoolean(file, 'disabled');
+  const source = extractAuthSource(file, name);
 
   const [windowUsageModels, setWindowUsageModels] = useState<Record<string, WindowUsageCategory[]>>({});
 
@@ -254,8 +256,8 @@ export function QuotaCard({
 
     quota.rows.forEach(async (row) => {
       const windowStartMs = computeWindowStartMs(row.resetAtMs, row.label);
-      const key = `${row.label}-${windowStartMs}`;
-      const models = await fetchWindowUsageModels(provider, windowStartMs);
+      const key = `${source || ''}-${row.label}-${windowStartMs}`;
+      const models = await fetchWindowUsageModels(provider, windowStartMs, source);
       if (!cancelled && models.length > 0) {
         setWindowUsageModels((prev) => ({
           ...prev,
@@ -267,7 +269,7 @@ export function QuotaCard({
     return () => {
       cancelled = true;
     };
-  }, [quota.status, quota.rows, provider, displayMode]);
+  }, [quota.status, quota.rows, provider, displayMode, source]);
 
   return (
     <article className="panel real-quota-card">
@@ -296,7 +298,7 @@ export function QuotaCard({
       {quota.status === 'success' ? <div className="quota-row-list">{quota.rows.map((row, index) => {
         const reset = formatQuotaReset(row.resetAtMs, row.reset, locale, now);
         const windowStartMs = computeWindowStartMs(row.resetAtMs, row.label);
-        const models = windowUsageModels[`${row.label}-${windowStartMs}`];
+        const models = windowUsageModels[`${source || ''}-${row.label}-${windowStartMs}`];
         const actualTokens = extractConsumedTokens(models, provider, row.label);
         const estimate = displayMode === 'estimate'
           ? calculateQuotaEstimate(provider, row.label, row.remainingPercent, row.detail, actualTokens)
