@@ -71,6 +71,10 @@ const CODEX_RESET_CREDITS_CONSUME_URL =
   'https://chatgpt.com/backend-api/wham/rate-limit-reset-credits/consume';
 const ANTIGRAVITY_CODE_ASSIST_URL =
   'https://cloudcode-pa.googleapis.com/v1internal:loadCodeAssist';
+const ANTIGRAVITY_FETCH_MODELS_URLS = [
+  'https://daily-cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels',
+  'https://cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels',
+];
 
 const headersByProvider: Record<QuotaProvider, Record<string, string>> = {
   devin: DEVIN_QUOTA_HEADERS,
@@ -363,6 +367,126 @@ const antigravityWindowLabel = (window: string, displayName: string): string => 
   if (key === 'weekly' || key === 'week') return quotaText('quota.service.weekly');
   // 内核将来新增窗口类型时，退回上游原文，避免两个分组看起来一模一样。
   return displayName.trim();
+};
+
+export type AntigravityModelQuota = {
+  remainingFraction: number;
+  resetTime?: string;
+};
+
+export const extractAntigravityModelQuotas = (
+  modelsPayload: unknown,
+): { geminiQuota?: AntigravityModelQuota; claudeQuota?: AntigravityModelQuota } => {
+  const root = parseBody(modelsPayload);
+  if (!isRecord(root)) return {};
+  const models = isRecord(root.models) ? root.models : {};
+  let geminiQuota: AntigravityModelQuota | undefined;
+  let claudeQuota: AntigravityModelQuota | undefined;
+
+  for (const [name, rawModel] of Object.entries(models)) {
+    if (!isRecord(rawModel)) continue;
+    const rawQuota = isRecord(rawModel.quotaInfo)
+      ? rawModel.quotaInfo
+      : isRecord(rawModel.quota_info)
+        ? rawModel.quota_info
+        : null;
+    if (!rawQuota) continue;
+    const fraction = quotaFraction(rawQuota.remaining_fraction ?? rawQuota.remainingFraction);
+    if (fraction === null) continue;
+    const resetTime = readString(rawQuota, 'reset_time', 'resetTime');
+    const lowerName = name.toLowerCase();
+
+    if (!geminiQuota && (lowerName.includes('gemini') || lowerName.startsWith('gemini'))) {
+      geminiQuota = { remainingFraction: fraction, resetTime: resetTime || undefined };
+    }
+    if (!claudeQuota && (lowerName.includes('claude') || lowerName.includes('gpt') || lowerName.startsWith('3p'))) {
+      claudeQuota = { remainingFraction: fraction, resetTime: resetTime || undefined };
+    }
+    if (geminiQuota && claudeQuota) break;
+  }
+
+  return { geminiQuota, claudeQuota };
+};
+
+export const mergeAntigravityQuotaSummary = (
+  summaryPayload: unknown,
+  modelsPayload: unknown,
+): unknown => {
+  const summary = parseBody(summaryPayload);
+  if (!isRecord(summary)) return summaryPayload;
+  const { geminiQuota, claudeQuota } = extractAntigravityModelQuotas(modelsPayload);
+  if (!geminiQuota && !claudeQuota) return summary;
+
+  const rawGroups = Array.isArray(summary.groups) ? summary.groups : [];
+  let foundGeminiGroup = false;
+  let foundClaudeGroup = false;
+
+  const nextGroups = rawGroups.map((group) => {
+    if (!isRecord(group)) return group;
+    const gName = (readString(group, 'display_name', 'displayName') || '').toLowerCase();
+    const isGemini = gName.includes('gemini');
+    const isClaude = gName.includes('claude') || gName.includes('gpt');
+
+    if (isGemini) foundGeminiGroup = true;
+    if (isClaude) foundClaudeGroup = true;
+
+    if ((!isGemini && !isClaude) || !Array.isArray(group.buckets)) return group;
+
+    const targetQuota = isGemini ? geminiQuota : claudeQuota;
+    if (!targetQuota) return group;
+
+    let has5hBucket = false;
+    const nextBuckets = group.buckets.map((bucket) => {
+      if (!isRecord(bucket)) return bucket;
+      const window = (readString(bucket, 'window') || '').toLowerCase();
+      const bucketId = (readString(bucket, 'bucketId', 'bucket_id') || '').toLowerCase();
+      const is5h = ['5h', 'five-hour', 'five_hour'].includes(window) || bucketId.includes('5h');
+      if (is5h) {
+        has5hBucket = true;
+        return {
+          ...bucket,
+          remainingFraction: targetQuota.remainingFraction,
+          ...(targetQuota.resetTime ? { resetTime: targetQuota.resetTime } : {}),
+        };
+      }
+      return bucket;
+    });
+
+    if (!has5hBucket) {
+      nextBuckets.unshift({
+        bucketId: isGemini ? 'gemini-5h' : '3p-5h',
+        displayName: 'Five Hour Limit Remaining',
+        window: '5h',
+        remainingFraction: targetQuota.remainingFraction,
+        ...(targetQuota.resetTime ? { resetTime: targetQuota.resetTime } : {}),
+      });
+    }
+
+    return {
+      ...group,
+      buckets: nextBuckets,
+    };
+  });
+
+  if (!foundGeminiGroup && geminiQuota) {
+    nextGroups.unshift({
+      displayName: 'Gemini Models',
+      buckets: [
+        {
+          bucketId: 'gemini-5h',
+          displayName: 'Five Hour Limit Remaining',
+          window: '5h',
+          remainingFraction: geminiQuota.remainingFraction,
+          ...(geminiQuota.resetTime ? { resetTime: geminiQuota.resetTime } : {}),
+        },
+      ],
+    });
+  }
+
+  return {
+    ...summary,
+    groups: nextGroups,
+  };
 };
 
 export const quotaRowsFor = (provider: QuotaProvider, payload: unknown): QuotaRow[] => {
@@ -779,6 +903,30 @@ const loadAntigravityPlan = async (file: AuthFile): Promise<string | undefined> 
   }
 };
 
+const fetchAntigravityModels = async (
+  authIndex: string,
+  project: string,
+  header: Record<string, string>,
+): Promise<unknown> => {
+  for (const url of ANTIGRAVITY_FETCH_MODELS_URLS) {
+    try {
+      const payload = await requestQuotaPayload(
+        authIndex,
+        url,
+        header,
+        'POST',
+        project ? JSON.stringify({ project }) : undefined,
+      );
+      if (isRecord(payload) && isRecord(payload.models)) {
+        return payload;
+      }
+    } catch {
+      // 容错降级并尝试下一个端点
+    }
+  }
+  return null;
+};
+
 async function callUpstreamQuota(
   file: AuthFile,
   provider: QuotaProvider,
@@ -826,6 +974,15 @@ async function callUpstreamQuota(
           lastError = quotaText('quota.service.error.antigravityEmpty');
           continue;
         }
+        try {
+          const modelsPayload = await fetchAntigravityModels(authIndex, project, header);
+          if (modelsPayload) {
+            return mergeAntigravityQuotaSummary(payload, modelsPayload);
+          }
+        } catch {
+          // 容错：若模型接口异常，保留基础配额响应
+        }
+        return payload;
       }
       return payload;
     } catch (error) {

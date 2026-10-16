@@ -2,6 +2,8 @@ import { describe, expect, it } from 'bun:test';
 import {
   codexResetCreditDetailsFor,
   codexResetCreditsFor,
+  extractAntigravityModelQuotas,
+  mergeAntigravityQuotaSummary,
   quotaRowsFor,
 } from '../src/services/quotaService';
 
@@ -321,5 +323,113 @@ describe('quotaRowsFor', () => {
     expect(rows).toHaveLength(1);
     expect(rows[0].remainingPercent).toBe(100);
     expect(rows[0].resetAtMs).toBeUndefined();
+  });
+});
+
+describe('Antigravity model quota merger', () => {
+  it('正确从 fetchAvailableModels 响应中提取各模型的真实 5h 配额', () => {
+    const modelsPayload = {
+      models: {
+        'gemini-2.5-pro': {
+          quotaInfo: {
+            remainingFraction: 0.85,
+            resetTime: '2026-10-16T05:55:07Z',
+          },
+        },
+        'claude-sonnet-4-6': {
+          quotaInfo: {
+            remainingFraction: 1,
+            resetTime: '2026-10-16T07:31:35Z',
+          },
+        },
+      },
+    };
+
+    const { geminiQuota, claudeQuota } = extractAntigravityModelQuotas(modelsPayload);
+    expect(geminiQuota?.remainingFraction).toBe(0.85);
+    expect(geminiQuota?.resetTime).toBe('2026-10-16T05:55:07Z');
+    expect(claudeQuota?.remainingFraction).toBe(1);
+    expect(claudeQuota?.resetTime).toBe('2026-10-16T07:31:35Z');
+  });
+
+  it('mergeAntigravityQuotaSummary 用真实模型 5h 配额覆盖汇总中虚标的 100% 5h 桶并保留周配额', () => {
+    const summary = {
+      groups: [
+        {
+          displayName: 'Gemini Models',
+          buckets: [
+            {
+              bucketId: 'gemini-5h',
+              displayName: 'Five Hour Limit Remaining',
+              window: '5h',
+              remainingFraction: 1,
+              resetTime: '2026-10-16T15:15:00Z',
+            },
+            {
+              bucketId: 'gemini-weekly',
+              displayName: 'Weekly Limit Remaining',
+              window: 'weekly',
+              remainingFraction: 0.79,
+              resetTime: '2026-10-20T08:33:46Z',
+            },
+          ],
+        },
+      ],
+    };
+
+    const models = {
+      models: {
+        'gemini-3.8-flash-tiered': {
+          quotaInfo: {
+            remainingFraction: 0.83,
+            resetTime: '2026-10-16T05:55:07Z',
+          },
+        },
+      },
+    };
+
+    const merged = mergeAntigravityQuotaSummary(summary, models);
+    const rows = quotaRowsFor('antigravity', merged);
+    const fiveHourRow = rows.find((r) => r.label.includes('5 小时') || r.label.includes('5h') || r.label.includes('Five'));
+    const weeklyRow = rows.find((r) => r.label.includes('每周') || r.label.includes('Weekly'));
+
+    expect(fiveHourRow?.remainingPercent).toBe(83);
+    expect(fiveHourRow?.reset).toBeTruthy();
+    expect(weeklyRow?.remainingPercent).toBe(79);
+  });
+
+  it('summary 接口完全缺失 Gemini 分组时自动补齐 5h 分组', () => {
+    const summaryOnly3p = {
+      groups: [
+        {
+          displayName: 'Claude and GPT models',
+          buckets: [
+            {
+              bucketId: '3p-5h',
+              displayName: 'Five Hour Limit Remaining',
+              window: '5h',
+              remainingFraction: 1,
+            },
+          ],
+        },
+      ],
+    };
+
+    const models = {
+      models: {
+        'gemini-2.5-pro': {
+          quotaInfo: {
+            remainingFraction: 0.85,
+            resetTime: '2026-10-16T05:55:07Z',
+          },
+        },
+      },
+    };
+
+    const merged = mergeAntigravityQuotaSummary(summaryOnly3p, models);
+    const rows = quotaRowsFor('antigravity', merged);
+    const gemini5h = rows.find((r) => r.label.includes('Gemini') && (r.label.includes('5 小时') || r.label.includes('5h') || r.label.includes('Five')));
+    expect(gemini5h).toBeDefined();
+    expect(gemini5h?.remainingPercent).toBe(85);
   });
 });
