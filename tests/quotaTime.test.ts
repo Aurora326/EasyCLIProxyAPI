@@ -28,4 +28,22 @@ describe('quota reset instants', () => {
     expect(formatQuotaReset(resetMs, undefined, 'zh-CN', resetMs)).toContain('重置时间已到，请刷新确认');
     expect(formatQuotaReset(undefined, 'legacy', 'en', resetMs)).toBe('legacy');
   });
+
+  it('支持天+小时复合显示且整天不错误进位', () => {
+    const oneHour = 3600 * 1000;
+    const oneDay = 24 * oneHour;
+
+    // 7 天整或仅多几秒网络延迟，绝不进位成 8 天后
+    expect(formatQuotaReset(resetMs, undefined, 'zh-CN', resetMs - 7 * oneDay)).toContain('7天后');
+    expect(formatQuotaReset(resetMs, undefined, 'zh-CN', resetMs - (7 * oneDay + 5000))).toContain('7天后');
+
+    // 6 天 23 小时：精确到小时
+    const sixDays23Hours = 6 * oneDay + 23 * oneHour + 10 * 60 * 1000;
+    expect(formatQuotaReset(resetMs, undefined, 'zh-CN', resetMs - sixDays23Hours)).toContain('6天23小时后');
+    expect(formatQuotaReset(resetMs, undefined, 'en', resetMs - sixDays23Hours)).toContain('in 6d 23h');
+    expect(formatQuotaReset(resetMs, undefined, 'ja', resetMs - sixDays23Hours)).toContain('6日23時間後');
+
+    // 小于 1 天但大于 1 小时
+    expect(formatQuotaReset(resetMs, undefined, 'zh-CN', resetMs - 3 * oneHour)).toContain('3小时后');
+  });
 });

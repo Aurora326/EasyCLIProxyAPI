@@ -60,7 +60,7 @@ const endpointByProvider: Record<QuotaProvider, string> = {
   codex: 'https://chatgpt.com/backend-api/wham/usage',
   kimi: 'https://api.kimi.com/coding/v1/usages',
   xai: 'https://cli-chat-proxy.grok.com/v1/billing',
-  antigravity: 'https://cloudcode-pa.googleapis.com/v1internal:retrieveUserQuotaSummary',
+  antigravity: 'https://daily-cloudcode-pa.googleapis.com/v1internal:retrieveUserQuotaSummary',
 };
 
 const CLAUDE_PROFILE_URL = 'https://api.anthropic.com/api/oauth/profile';
@@ -99,7 +99,7 @@ const headersByProvider: Record<QuotaProvider, Record<string, string>> = {
   antigravity: {
     Authorization: 'Bearer $TOKEN$',
     'Content-Type': 'application/json',
-    'User-Agent': 'antigravity/cli/1.0.13 (aidev_client; os_type=darwin; arch=arm64)',
+    'User-Agent': 'antigravity/hub/2.24.0 windows/amd64',
   },
 };
 
@@ -951,8 +951,8 @@ async function callUpstreamQuota(
   const urls = provider === 'antigravity'
     ? [
         endpointByProvider.antigravity,
-        'https://daily-cloudcode-pa.googleapis.com/v1internal:retrieveUserQuotaSummary',
         'https://daily-cloudcode-pa.sandbox.googleapis.com/v1internal:retrieveUserQuotaSummary',
+        'https://cloudcode-pa.googleapis.com/v1internal:retrieveUserQuotaSummary',
       ]
     : [endpointByProvider[provider]];
   let lastError = '';

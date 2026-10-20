@@ -44,11 +44,26 @@ export const formatQuotaReset = (
   }).format(resetAtMs);
   const delta = resetAtMs - nowMs;
   if (delta <= 0) return `${absolute} · ${translate(locale, 'quota.resetPassed')}`;
-  const minutes = Math.max(1, Math.ceil(delta / 60000));
+  const totalMinutes = Math.max(1, Math.round(delta / 60000));
   const relative = new Intl.RelativeTimeFormat(locale, { numeric: 'always' });
-  const label = minutes >= 1440 ? relative.format(Math.ceil(minutes / 1440), 'day')
-    : minutes >= 60 ? relative.format(Math.ceil(minutes / 60), 'hour')
-      : relative.format(minutes, 'minute');
+  let label: string;
+  if (totalMinutes >= 1440) {
+    const days = Math.floor(totalMinutes / 1440);
+    const hours = Math.floor((totalMinutes % 1440) / 60);
+    if (hours > 0) {
+      label = locale === 'en'
+        ? `in ${days}d ${hours}h`
+        : locale === 'ja'
+          ? `${days}日${hours}時間後`
+          : `${days}天${hours}小时后`;
+    } else {
+      label = relative.format(days, 'day');
+    }
+  } else if (totalMinutes >= 60) {
+    label = relative.format(Math.floor(totalMinutes / 60), 'hour');
+  } else {
+    label = relative.format(totalMinutes, 'minute');
+  }
   return `${absolute} · ${label}`;
 };
 
