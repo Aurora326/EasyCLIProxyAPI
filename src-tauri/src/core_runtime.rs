@@ -1370,12 +1370,14 @@ fn start_core_process_once(
     install_dir: &Path,
     log_path: &Path,
     management_address: SocketAddr,
+    proxy_url: &str,
 ) -> Result<CoreChild, CoreStartAttemptFailure> {
     let mut command = Command::new(binary_path);
     command
         .args(["-config", config_path])
         .current_dir(install_dir)
         .stdin(Stdio::null());
+    configure_networked_command(&mut command, proxy_url);
     let log_error = match core_start_stdio(log_path) {
         Ok((stdout, stderr)) => {
             command.stdout(stdout).stderr(stderr);
@@ -1448,6 +1450,7 @@ pub(crate) fn start_core_process_inner(
             &install_dir,
             &log_path,
             management_address,
+            &gui_config.proxy_url,
         )
     };
 
