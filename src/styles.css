@@ -7006,16 +7006,21 @@ textarea:focus-visible {
 }
 
 .agent-model-dropdown {
-  position: fixed;
-  z-index: 45;
+  position: absolute;
+  top: calc(100% + 5px);
+  left: 0;
+  width: 100%;
+  min-width: 290px;
+  max-width: 440px;
+  z-index: 1000;
   display: grid;
-  grid-template-rows: 40px minmax(0, 1fr) 28px;
-  gap: 7px;
-  padding: 9px;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: 8px;
+  padding: 10px;
   border: 1px solid var(--theme-e3e1db);
-  border-radius: 8px;
-  background: var(--theme-fffdf8);
-  box-shadow: 0 14px 34px rgba(45, 42, 38, 0.2);
+  border-radius: 10px;
+  background: var(--theme-fff);
+  box-shadow: 0 16px 36px rgba(45, 42, 38, 0.16), 0 4px 12px rgba(45, 42, 38, 0.08);
 }
 
 .agent-model-search {
@@ -7074,8 +7079,80 @@ textarea:focus-visible {
 }
 
 .agent-model-option.selected {
-  background: var(--theme-eeece6);
+  background: #eff6ff;
+  border-left: 3px solid #3b82f6;
 }
+.agent-model-option-content {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.agent-model-option-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.agent-model-option-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--theme-2d2a26);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agent-model-badges {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.agent-badge-thinking {
+  font-size: 10px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: #f3e8ff;
+  color: #7e22ce;
+  font-weight: 600;
+}
+
+.agent-badge-fast {
+  font-size: 10px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: #ecfdf5;
+  color: #047857;
+  font-weight: 600;
+}
+
+.agent-model-option-subtitle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  font-size: 11px;
+  color: var(--theme-8a847c);
+}
+
+.agent-model-id {
+  font-family: var(--font-mono, monospace);
+  font-size: 11px;
+  color: var(--theme-5f5a53);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agent-model-channel {
+  flex-shrink: 0;
+  color: var(--theme-8a847c);
+}
+
 
 .agent-model-option > span {
   display: grid;

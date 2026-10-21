@@ -65,6 +65,7 @@ import {
 } from '../services/deepSeekHarnessLaunch';
 import type { ModelOption } from '../services/modelService';
 import { getCurrentLocale, translate, useI18n } from '../i18n';
+import { normalizeAntigravityDisplayName } from '../services/antigravityModels';
 import { CodexSessionsPanel } from './CodexSessionsPanel';
 import { CodexModelCatalogDialog } from './CodexModelCatalogDialog';
 import { DeepSeekHarnessCatalogDialog } from './DeepSeekHarnessCatalogDialog';
@@ -490,6 +491,26 @@ type AgentModelDropdownLayout = {
   height: number;
 };
 
+function getModelDisplayMeta(modelName: string) {
+  const lower = modelName.toLowerCase();
+  const displayName = normalizeAntigravityDisplayName(modelName);
+  const isThinking = /thinking|reasoner|o1|o3|opus|sonnet|gemini-3|gemini-2\.5/i.test(lower);
+  const isFast = /flash|fast|mini|lite/i.test(lower) && !lower.includes('thinking');
+  let channel = '';
+  if (/gemini|argon|claude-opus-4-6|claude-sonnet-4-6|gpt-oss/i.test(lower)) {
+    channel = 'Antigravity OAuth';
+  } else if (/grok/i.test(lower)) {
+    channel = 'xAI OAuth';
+  } else if (/kimi/i.test(lower)) {
+    channel = 'Kimi OAuth';
+  } else if (/deepseek/i.test(lower)) {
+    channel = 'DeepSeek';
+  } else if (/claude/i.test(lower)) {
+    channel = 'Claude OAuth';
+  }
+  return { displayName, isThinking, isFast, channel };
+}
+
 function AgentModelPicker({
   models,
   value,
@@ -503,7 +524,6 @@ function AgentModelPicker({
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
   const [activeIndex, setActiveIndex] = useState(0);
-  const [dropdownLayout, setDropdownLayout] = useState<AgentModelDropdownLayout | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const visibleModels = useMemo(() => filterAgentModels(models, search), [models, search]);
@@ -514,51 +534,6 @@ function AgentModelPicker({
   const selectedModel = findAgentModel(models, value);
   const selectedName = selectedModel?.name ?? '';
   const selectedAlias = selectedName ? agentModelAlias(models, selectedName) : '';
-
-  const updateDropdownLayout = useCallback(() => {
-    const root = rootRef.current;
-    if (!root) return;
-
-    const rect = root.getBoundingClientRect();
-    const edgeGap = 12;
-    const triggerGap = 6;
-    const preferredHeight = 282;
-    const minimumHeight = 150;
-    const spaceBelow = Math.max(0, window.innerHeight - rect.bottom - triggerGap - edgeGap);
-    const spaceAbove = Math.max(0, rect.top - triggerGap - edgeGap);
-    const placeAbove = spaceBelow < preferredHeight && spaceAbove > spaceBelow;
-    const availableHeight = placeAbove ? spaceAbove : spaceBelow;
-    const height = Math.min(preferredHeight, Math.max(minimumHeight, availableHeight));
-    const width = Math.min(rect.width, window.innerWidth - edgeGap * 2);
-    const left = Math.min(
-      Math.max(edgeGap, rect.left),
-      Math.max(edgeGap, window.innerWidth - edgeGap - width),
-    );
-    const desiredTop = placeAbove
-      ? rect.top - triggerGap - height
-      : rect.bottom + triggerGap;
-    const top = Math.min(
-      Math.max(edgeGap, desiredTop),
-      Math.max(edgeGap, window.innerHeight - edgeGap - height),
-    );
-
-    setDropdownLayout({ top, left, width, height });
-  }, []);
-
-  useLayoutEffect(() => {
-    if (!open) {
-      setDropdownLayout(null);
-      return undefined;
-    }
-
-    updateDropdownLayout();
-    window.addEventListener('resize', updateDropdownLayout);
-    window.addEventListener('scroll', updateDropdownLayout);
-    return () => {
-      window.removeEventListener('resize', updateDropdownLayout);
-      window.removeEventListener('scroll', updateDropdownLayout);
-    };
-  }, [open, updateDropdownLayout]);
 
   useEffect(() => {
     if (!open) return undefined;
@@ -635,12 +610,7 @@ function AgentModelPicker({
       </button>
 
       {open ? (
-        <div
-          className="agent-model-dropdown"
-          style={dropdownLayout
-            ? dropdownLayout
-            : { top: 0, left: 0, width: 0, height: 0, visibility: 'hidden' }}
-        >
+        <div className="agent-model-dropdown">
           <div className="agent-model-search">
             <Search size={15} aria-hidden />
             <input
@@ -687,6 +657,7 @@ function AgentModelPicker({
               </div>
             ) : choices.map((choice, index) => {
               const selected = choice.name.toLocaleLowerCase() === value.trim().toLocaleLowerCase();
+              const meta = getModelDisplayMeta(choice.name);
               return (
                 <button
                   type="button"
@@ -697,10 +668,22 @@ function AgentModelPicker({
                   onMouseEnter={() => setActiveIndex(index)}
                   onClick={() => choose(choice.name)}
                 >
-                  <span>
-                    <strong title={choice.name}>{choice.name}</strong>
-                    <small>{choice.alias || t('agents.model.available')}</small>
-                  </span>
+                  <div className="agent-model-option-content">
+                    <div className="agent-model-option-header">
+                      <strong className="agent-model-option-title" title={meta.displayName}>
+                        {meta.displayName}
+                      </strong>
+                      <div className="agent-model-badges">
+                        {meta.isThinking ? <span className="agent-badge-thinking">🧠 {t('common.thinking')}</span> : null}
+                        {meta.isFast ? <span className="agent-badge-fast">⚡ {t('speedAliases.fast.title')}</span> : null}
+                      </div>
+                    </div>
+                    <div className="agent-model-option-subtitle">
+                      <code className="agent-model-id" title={choice.name}>{choice.name}</code>
+                      {choice.alias ? <span>({choice.alias})</span> : null}
+                      {meta.channel ? <span className="agent-model-channel">· {meta.channel}</span> : null}
+                    </div>
+                  </div>
                   {selected ? <Check size={16} aria-hidden /> : null}
                 </button>
               );
