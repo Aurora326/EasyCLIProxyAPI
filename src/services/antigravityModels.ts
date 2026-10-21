@@ -310,8 +310,15 @@ export const autoSyncAntigravityUpstreamModels = async (): Promise<{
         return { addedCount: 0, models: [] };
       }
 
-      // 3. 自动同步注入网关
-      const { addedCount } = await syncUpstreamAntigravityModelsToGateway(upstreamModels);
+      // 3. 自动同步注入网关（容错隔离：即使网关写入出现波动，探测到的模型也完整返回）
+      let addedCount = 0;
+      try {
+        const syncResult = await syncUpstreamAntigravityModelsToGateway(upstreamModels);
+        addedCount = syncResult.addedCount;
+      } catch (syncErr) {
+        console.warn('Antigravity 模型别名同步至网关跳过:', syncErr);
+      }
+
       return { addedCount, models: upstreamModels };
     } catch (error) {
       console.warn('Antigravity 上游模型自动同步跳过:', error);

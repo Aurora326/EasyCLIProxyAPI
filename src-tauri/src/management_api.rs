@@ -90,7 +90,19 @@ pub(crate) async fn management_request(
         builder = builder.query(&query);
     }
     if let Some(body) = request.body {
-        builder = builder.json(&body);
+        let normalized_path = path.trim_start_matches('/');
+        let is_yaml_endpoint = normalized_path.starts_with("config.yaml") || normalized_path.ends_with(".yaml");
+        if is_yaml_endpoint {
+            if let Some(text) = body.as_str() {
+                builder = builder
+                    .header(reqwest::header::CONTENT_TYPE, "application/yaml")
+                    .body(text.to_string());
+            } else {
+                builder = builder.json(&body);
+            }
+        } else {
+            builder = builder.json(&body);
+        }
     }
 
     let response = builder

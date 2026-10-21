@@ -14,7 +14,7 @@ import {
 } from 'lucide-react';
 import { useCoreRuntime } from '../coreRuntime';
 import { managementApi, responseList, readString } from '../services/managementApi';
-import { autoSyncAntigravityUpstreamModels } from '../services/antigravityModels';
+import { autoSyncAntigravityUpstreamModels, getRecommendedAliasForModel } from '../services/antigravityModels';
 import { thinkingAliasSourceKindLabel } from './ThinkingAliasesPage';
 
 interface ModelsCatalogPageProps {
@@ -212,19 +212,37 @@ export function ModelsCatalogPage({ onTestModel, onNavigate }: ModelsCatalogPage
         const modelName = m.id?.trim();
         if (!modelName) continue;
         const key = modelName.toLowerCase();
-        const existing = catalogMap.get(key);
-        if (existing) {
+        const mapping = getRecommendedAliasForModel(m);
+        const aliasKey = mapping.alias.trim().toLowerCase();
+
+        // 注册原模型
+        if (!catalogMap.has(key)) {
+          catalogMap.set(key, {
+            id: modelName,
+            displayName: m.displayName && m.displayName !== modelName ? m.displayName : undefined,
+            isAlias: false,
+            provider: 'Antigravity OAuth',
+            kind: 'antigravity',
+            supportsReasoning: Boolean(m.supportsThinking),
+            reasoningLevels: m.supportsThinking ? ['high'] : [],
+          });
+        } else {
+          const existing = catalogMap.get(key)!;
           if (!existing.displayName && m.displayName && m.displayName !== modelName) {
             existing.displayName = m.displayName;
           }
           if (m.supportsThinking) {
             existing.supportsReasoning = true;
           }
-        } else {
-          catalogMap.set(key, {
-            id: modelName,
-            displayName: m.displayName && m.displayName !== modelName ? m.displayName : undefined,
-            isAlias: false,
+        }
+
+        // 如果该探测模型有推荐的别名且与原ID不同（例如 gemini-4-argon -> gemini-4-argon-disabled）
+        if (aliasKey !== key && !catalogMap.has(aliasKey)) {
+          catalogMap.set(aliasKey, {
+            id: mapping.alias,
+            displayName: mapping.displayName || m.displayName,
+            isAlias: true,
+            sourceModel: modelName,
             provider: 'Antigravity OAuth',
             kind: 'antigravity',
             supportsReasoning: Boolean(m.supportsThinking),
