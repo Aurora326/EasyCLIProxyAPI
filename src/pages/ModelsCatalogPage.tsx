@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { useCoreRuntime } from '../coreRuntime';
 import { managementApi, responseList, readString } from '../services/managementApi';
+import { autoSyncAntigravityUpstreamModels } from '../services/antigravityModels';
 import { thinkingAliasSourceKindLabel } from './ThinkingAliasesPage';
 
 interface ModelsCatalogPageProps {
@@ -202,6 +203,37 @@ export function ModelsCatalogPage({ onTestModel, onNavigate }: ModelsCatalogPage
       }
     } catch {
       // 忽略
+    }
+
+    // 3. 自动同步并载入 Antigravity 上游实时探测模型
+    try {
+      const { models: upstreamModels } = await autoSyncAntigravityUpstreamModels();
+      for (const m of upstreamModels || []) {
+        const modelName = m.id?.trim();
+        if (!modelName) continue;
+        const key = modelName.toLowerCase();
+        const existing = catalogMap.get(key);
+        if (existing) {
+          if (!existing.displayName && m.displayName && m.displayName !== modelName) {
+            existing.displayName = m.displayName;
+          }
+          if (m.supportsThinking) {
+            existing.supportsReasoning = true;
+          }
+        } else {
+          catalogMap.set(key, {
+            id: modelName,
+            displayName: m.displayName && m.displayName !== modelName ? m.displayName : undefined,
+            isAlias: false,
+            provider: 'Antigravity OAuth',
+            kind: 'antigravity',
+            supportsReasoning: Boolean(m.supportsThinking),
+            reasoningLevels: m.supportsThinking ? ['high'] : [],
+          });
+        }
+      }
+    } catch {
+      // 忽略自动同步异常
     }
 
     const resultList = Array.from(catalogMap.values()).sort((a, b) => {

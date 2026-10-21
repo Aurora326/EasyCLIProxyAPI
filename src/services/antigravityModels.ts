@@ -216,24 +216,40 @@ export const injectAntigravityAliasesToYaml = (
     return { updatedYaml: yamlContent, addedCount: 0 };
   }
 
-  // 构建要追加的 yaml 片段
-  const blockLines = newItems.map((item) => {
-    return `            - name: "${item.name}"\n              alias: "${item.alias}"\n              fork: true\n              display-name: "${item.displayName}"\n              force-mapping: true`;
-  });
-  const blockText = blockLines.join('\n') + '\n';
-
-  // 尝试插入到 model-alias 下的 antigravity: 后面
-  const antigravitySectionRegex = /(model-alias:\s*[\r\n]+(?:\s+#[^\r\n]*[\r\n]+)*\s+antigravity:\s*[\r\n]+)/;
-  if (antigravitySectionRegex.test(yamlContent)) {
+  // 1. 尝试匹配已有的 oauth-model-alias 下的 antigravity:
+  const oauthSectionRegex = /((?:^|\n)(oauth-model-alias:\s*[\r\n]+(?:\s+#[^\r\n]*[\r\n]+)*\s+antigravity:\s*[\r\n]+))/;
+  if (oauthSectionRegex.test(yamlContent)) {
+    const blockLines = newItems.map((item) => {
+      return `    - name: "${item.name}"\n      alias: "${item.alias}"\n      fork: true\n      display-name: "${item.displayName}"\n      force-mapping: true`;
+    });
+    const blockText = blockLines.join('\n') + '\n';
     const updatedYaml = yamlContent.replace(
-      antigravitySectionRegex,
+      oauthSectionRegex,
       `$1${blockText}`,
     );
     return { updatedYaml, addedCount: newItems.length };
   }
 
-  // 如果没有 model-alias，尝试在文件末尾追加
-  const updatedYaml = `${yamlContent.trimEnd()}\n\nmodel-alias:\n    antigravity:\n${blockText}`;
+  // 2. 尝试匹配已有的 model-alias 下的 antigravity:
+  const modelSectionRegex = /((?:^|\n)(model-alias:\s*[\r\n]+(?:\s+#[^\r\n]*[\r\n]+)*\s+antigravity:\s*[\r\n]+))/;
+  if (modelSectionRegex.test(yamlContent)) {
+    const blockLines = newItems.map((item) => {
+      return `        - name: "${item.name}"\n          alias: "${item.alias}"\n          fork: true\n          display-name: "${item.displayName}"\n          force-mapping: true`;
+    });
+    const blockText = blockLines.join('\n') + '\n';
+    const updatedYaml = yamlContent.replace(
+      modelSectionRegex,
+      `$1${blockText}`,
+    );
+    return { updatedYaml, addedCount: newItems.length };
+  }
+
+  // 3. 如果都没有，在文件末尾追加标准的 oauth-model-alias:
+  const blockLines = newItems.map((item) => {
+    return `    - name: "${item.name}"\n      alias: "${item.alias}"\n      fork: true\n      display-name: "${item.displayName}"\n      force-mapping: true`;
+  });
+  const blockText = blockLines.join('\n');
+  const updatedYaml = `${yamlContent.trimEnd()}\n\noauth-model-alias:\n  antigravity:\n${blockText}\n`;
   return { updatedYaml, addedCount: newItems.length };
 };
 
@@ -256,4 +272,55 @@ export const syncUpstreamAntigravityModelsToGateway = async (
   // 3. 提交更新后的 config.yaml
   await managementApi.put('/config.yaml', updatedYaml);
   return { addedCount };
+};
+
+/**
+ * 自动静默同步：探测并同步 Antigravity 上游模型至本地网关
+ * 无需用户手动点击任何按钮，有新模型时自动静默注入本地网关
+ */
+let autoSyncPromise: Promise<{ addedCount: number; models: AntigravityDiscoveredModel[] }> | null = null;
+export const autoSyncAntigravityUpstreamModels = async (): Promise<{
+  addedCount: number;
+  models: AntigravityDiscoveredModel[];
+}> => {
+  if (autoSyncPromise) return autoSyncPromise;
+  autoSyncPromise = (async () => {
+    try {
+      // 1. 获取所有凭证文件
+      const authFilesPayload = await managementApi.get<Record<string, unknown>>('/auth-files');
+      const files = isRecord(authFilesPayload) && Array.isArray(authFilesPayload.files)
+        ? authFilesPayload.files
+        : [];
+      const antigravityFile = files.find((f) => {
+        if (!isRecord(f)) return false;
+        const provider = readString(f, 'provider', 'type').toLowerCase();
+        return provider === 'antigravity' && !f.disabled;
+      });
+      if (!antigravityFile || !isRecord(antigravityFile)) {
+        return { addedCount: 0, models: [] };
+      }
+
+      const authIndex = readString(antigravityFile, 'auth_index', 'authIndex', 'id', 'name');
+      const projectId = readString(antigravityFile, 'project_id', 'projectId') || 'aicode-consumers';
+      if (!authIndex) return { addedCount: 0, models: [] };
+
+      // 2. 向上游发起探测
+      const upstreamModels = await fetchUpstreamAntigravityModels(authIndex, projectId);
+      if (!upstreamModels || upstreamModels.length === 0) {
+        return { addedCount: 0, models: [] };
+      }
+
+      // 3. 自动同步注入网关
+      const { addedCount } = await syncUpstreamAntigravityModelsToGateway(upstreamModels);
+      return { addedCount, models: upstreamModels };
+    } catch (error) {
+      console.warn('Antigravity 上游模型自动同步跳过:', error);
+      return { addedCount: 0, models: [] };
+    } finally {
+      setTimeout(() => {
+        autoSyncPromise = null;
+      }, 30_000); // 30秒冷却
+    }
+  })();
+  return autoSyncPromise;
 };

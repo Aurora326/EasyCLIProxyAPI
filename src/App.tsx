@@ -53,6 +53,7 @@ import { appUpdateIndicatorState } from './appUpdateModel';
 import { canOpenAppPage, isAlwaysAvailablePage } from './navigation';
 import { useThemePreference } from './theme';
 import { useQuotaAutoRefresh } from './services/quotaAutoRefresh';
+import { autoSyncAntigravityUpstreamModels } from './services/antigravityModels';
 
 const CONTACT_URL = 'https://qm.qq.com/q/3queDaIG';
 
@@ -96,6 +97,12 @@ function AppContent() {
   const { status, refreshStatus } = useCoreRuntime();
   const coreRunning = Boolean(status?.running);
   useQuotaAutoRefresh(coreRunning);
+
+  useEffect(() => {
+    if (coreRunning) {
+      void autoSyncAntigravityUpstreamModels();
+    }
+  }, [coreRunning]);
 
   useEffect(() => {
     if (isTauri()) {
