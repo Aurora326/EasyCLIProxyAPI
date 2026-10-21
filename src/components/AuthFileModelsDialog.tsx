@@ -1,6 +1,18 @@
 import { MessageNotice } from '../appNotice';
 import { useEffect, useState, useCallback } from 'react';
-import { Check, Copy, LoaderCircle, RefreshCw, Search, Sparkles, X, Globe, ArrowDownToLine } from 'lucide-react';
+import {
+  Check,
+  Copy,
+  LoaderCircle,
+  RefreshCw,
+  Search,
+  Sparkles,
+  X,
+  Globe,
+  ArrowDownToLine,
+  KeyRound,
+  Info,
+} from 'lucide-react';
 import { useI18n } from '../i18n';
 import { managementApi, readString, isRecord } from '../services/managementApi';
 import { oauthModelsFromPayload } from '../services/oauthModels';
@@ -175,34 +187,33 @@ export function AuthFileModelsDialog({ name, onClose }: AuthFileModelsDialogProp
           if (event.key === 'Escape') onClose();
         }}
       >
-        <div className="model-discovery-header">
-          <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <h2 id="auth-model-view-title" style={{ margin: 0 }}>
+        <div className="auth-model-view-header">
+          <div className="auth-model-view-header-main">
+            <div className="auth-model-view-title-row">
+              <h2 id="auth-model-view-title">
                 {t('authFiles.models.viewTitle')}
               </h2>
               {isRealtime ? (
-                <span
-                  style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: '4px',
-                    fontSize: '11px',
-                    fontWeight: 600,
-                    padding: '2px 8px',
-                    borderRadius: '999px',
-                    backgroundColor: 'rgba(34, 197, 94, 0.15)',
-                    color: '#16a34a',
-                    border: '1px solid rgba(34, 197, 94, 0.3)',
-                  }}
-                >
+                <span className="auth-model-status-badge upstream">
                   <Globe size={12} />
                   {t('authFiles.models.realtimeUpstream', { count: models.length })}
                 </span>
-              ) : null}
+              ) : (
+                <span className="auth-model-status-badge fallback">
+                  <Info size={12} />
+                  <span>已注册 ({models.length})</span>
+                </span>
+              )}
             </div>
-            <span className="auth-model-target">{name}</span>
-            <span>{t('authFiles.models.viewDescription')}</span>
+            <div className="auth-model-view-target-row">
+              <span className="auth-model-view-target-chip" title={name}>
+                <KeyRound size={12} />
+                <span>{name}</span>
+              </span>
+              <span className="auth-model-view-desc">
+                {t('authFiles.models.viewDescription')}
+              </span>
+            </div>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
             <button
@@ -225,34 +236,49 @@ export function AuthFileModelsDialog({ name, onClose }: AuthFileModelsDialogProp
           </div>
         </div>
 
-        <div className="model-discovery-search">
-          <Search size={16} aria-hidden="true" />
+        <div className="auth-model-view-search-wrapper">
+          <Search size={15} color="var(--theme-7a746c)" aria-hidden="true" />
           <input
             autoFocus
+            className="auth-model-view-search-input"
             value={search}
             onChange={(event) => setSearch(event.currentTarget.value)}
             placeholder={t('authFiles.models.search')}
           />
+          {search ? (
+            <button
+              type="button"
+              className="icon-button quiet"
+              onClick={() => setSearch('')}
+              style={{ padding: '2px' }}
+              title={t('common.clear')}
+            >
+              <X size={14} />
+            </button>
+          ) : null}
+          <span className="auth-model-view-search-count">
+            {visibleModels.length} / {models.length}
+          </span>
         </div>
 
-        <div className="model-discovery-content">
+        <div className="auth-model-view-body">
           {loading ? (
-            <div className="model-discovery-message">
-              <LoaderCircle size={20} className="spin" />
-              {t('authFiles.models.loading')}
+            <div className="model-discovery-message" style={{ margin: 'auto' }}>
+              <LoaderCircle size={22} className="spin" />
+              <span>{t('authFiles.models.loading')}</span>
             </div>
           ) : (
-            <div className="model-discovery-results">
+            <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
               <MessageNotice message={error} onDismiss={() => setError('')} />
               {notice ? (
                 <div
                   style={{
+                    margin: '8px 8px 0',
                     padding: '8px 12px',
                     borderRadius: '6px',
-                    backgroundColor: 'rgba(34, 197, 94, 0.15)',
+                    backgroundColor: 'rgba(34, 197, 94, 0.12)',
                     color: '#16a34a',
                     fontSize: '12px',
-                    marginBottom: '8px',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'space-between',
@@ -270,81 +296,62 @@ export function AuthFileModelsDialog({ name, onClose }: AuthFileModelsDialogProp
                 </div>
               ) : null}
               {visibleModels.length === 0 ? (
-                <div className="model-discovery-message">
+                <div className="model-discovery-message" style={{ margin: 'auto' }}>
                   {t(models.length ? 'authFiles.models.noMatch' : 'authFiles.models.viewEmpty')}
                 </div>
               ) : (
-                <div className="model-discovery-list">
+                <div className="auth-model-view-scroll-list">
                   {visibleModels.map((model) => {
                     const tokenText = formatTokens(model.contextLength);
+                    const isCopied = copied === model.id;
                     return (
                       <button
                         type="button"
-                        className="model-discovery-row auth-model-view-row"
+                        className={`auth-model-card-item ${isCopied ? 'copied' : ''}`}
                         key={model.id}
                         onClick={() => void copyModel(model.id)}
                         title={t('authFiles.models.copyModel')}
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'space-between',
-                          padding: '10px 14px',
-                        }}
                       >
-                        <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '2px', textAlign: 'left' }}>
-                          <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                            <strong style={{ fontSize: '13px' }}>
+                        <div className="auth-model-card-main">
+                          <div className="auth-model-card-top">
+                            <span className="auth-model-card-name">
                               {model.displayName || model.id}
-                            </strong>
+                            </span>
                             {tokenText ? (
-                              <span
-                                style={{
-                                  fontSize: '10px',
-                                  padding: '1px 6px',
-                                  borderRadius: '4px',
-                                  backgroundColor: 'var(--cpa-tag-bg, rgba(125, 125, 125, 0.12))',
-                                  color: 'var(--cpa-text-muted, #888)',
-                                }}
-                              >
+                              <span className="auth-model-card-badge context">
                                 {t('authFiles.models.context', { tokens: tokenText })}
                               </span>
                             ) : null}
                             {model.supportsThinking ? (
-                              <span
-                                style={{
-                                  fontSize: '10px',
-                                  padding: '1px 6px',
-                                  borderRadius: '4px',
-                                  backgroundColor: 'rgba(99, 102, 241, 0.12)',
-                                  color: '#6366f1',
-                                  display: 'inline-flex',
-                                  alignItems: 'center',
-                                  gap: '2px',
-                                }}
-                              >
+                              <span className="auth-model-card-badge thinking">
                                 <Sparkles size={10} />
                                 {t('common.thinking')}
                               </span>
                             ) : null}
-                          </span>
-                          <small
-                            style={{
-                              fontSize: '11px',
-                              opacity: 0.7,
-                              fontFamily: 'monospace',
-                              color: 'var(--cpa-text-subtle, #666)',
-                            }}
-                          >
-                            {model.id}
-                          </small>
-                        </span>
-                        <span style={{ display: 'flex', alignItems: 'center', marginLeft: '12px' }}>
-                          {copied === model.id ? (
-                            <Check size={16} color="#16a34a" />
+                            {model.isRealtimeUpstream ? (
+                              <span className="auth-model-card-badge upstream-source">
+                                Google Upstream
+                              </span>
+                            ) : null}
+                          </div>
+                          <div className="auth-model-card-id-row">
+                            <code className="auth-model-card-id">{model.id}</code>
+                          </div>
+                        </div>
+
+                        <div className={`auth-model-card-action ${isCopied ? 'copied' : ''}`}>
+                          {isCopied ? (
+                            <>
+                              <Check size={14} color="#16a34a" />
+                              <span>已复制</span>
+                            </>
                           ) : (
-                            <Copy size={16} opacity={0.6} />
+                            <>
+                              <Copy size={13} />
+                              <span>复制 ID</span>
+                            </>
                           )}
-                        </span>
+                        </div>
                       </button>
                     );
                   })}
@@ -354,7 +361,7 @@ export function AuthFileModelsDialog({ name, onClose }: AuthFileModelsDialogProp
           )}
         </div>
 
-        <div className="model-discovery-actions" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div className="auth-model-view-footer">
           <div>
             {isRealtime && rawUpstreamModels.length > 0 ? (
               <button
@@ -377,8 +384,9 @@ export function AuthFileModelsDialog({ name, onClose }: AuthFileModelsDialogProp
                 </span>
               </button>
             ) : (
-              <span style={{ fontSize: '12px', color: 'var(--cpa-text-subtle, #888)' }}>
-                {t('authFiles.models.copyHint')}
+              <span className="auth-model-view-footer-hint">
+                <Info size={13} />
+                <span>{t('authFiles.models.copyHint')}</span>
               </span>
             )}
           </div>

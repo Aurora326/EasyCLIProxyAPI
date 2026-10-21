@@ -65,7 +65,7 @@ import {
 } from '../services/deepSeekHarnessLaunch';
 import type { ModelOption } from '../services/modelService';
 import { getCurrentLocale, translate, useI18n } from '../i18n';
-import { normalizeAntigravityDisplayName } from '../services/antigravityModels';
+import { autoSyncAntigravityUpstreamModels, getRecommendedAliasForModel, normalizeAntigravityDisplayName } from '../services/antigravityModels';
 import { CodexSessionsPanel } from './CodexSessionsPanel';
 import { CodexModelCatalogDialog } from './CodexModelCatalogDialog';
 import { DeepSeekHarnessCatalogDialog } from './DeepSeekHarnessCatalogDialog';
@@ -842,12 +842,44 @@ export function AgentsPage({ embedded = false, onConfigurationApplied }: AgentsP
     try {
       const nextModels = await invoke<ModelOption[]>('get_agent_models', { client });
       if (modelRequestRef.current !== requestId) return;
-      setModels(nextModels);
+
+      // 聚合 Antigravity 上游动态探测模型与别名，确保与“模型清单”完全对齐
+      const { models: upstreamModels } = await autoSyncAntigravityUpstreamModels().catch(() => ({ addedCount: 0, models: [] }));
+      const mergedMap = new Map<string, ModelOption>();
+      for (const m of nextModels) {
+        mergedMap.set(m.name.toLowerCase(), m);
+      }
+      for (const up of upstreamModels) {
+        const key = up.id.toLowerCase();
+        if (!mergedMap.has(key)) {
+          mergedMap.set(key, {
+            name: up.id,
+            contextWindow: up.contextLength,
+            inputModalities: ['text', 'image'],
+            thinking: up.supportsThinking ? {} : undefined,
+          });
+        }
+        const mapping = getRecommendedAliasForModel(up);
+        const aliasKey = mapping.alias.toLowerCase();
+        if (aliasKey !== key && !mergedMap.has(aliasKey)) {
+          mergedMap.set(aliasKey, {
+            name: mapping.alias,
+            alias: up.id,
+            isAlias: true,
+            contextWindow: up.contextLength,
+            inputModalities: ['text', 'image'],
+            thinking: up.supportsThinking ? {} : undefined,
+          });
+        }
+      }
+      const allModels = Array.from(mergedMap.values());
+
+      setModels(allModels);
       setModelSelectionError('');
       setModelByClient((current) => {
         const next = {
           ...current,
-          [client]: resolveAgentModelSelection(nextModels, current[client] ?? preferredModel),
+          [client]: resolveAgentModelSelection(allModels, current[client] ?? preferredModel),
         };
         writeAgentModelSelections(next);
         return next;
