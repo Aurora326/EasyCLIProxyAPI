@@ -58,5 +58,13 @@ describe('quota card rendering', () => {
     const html = render({ status: 'success', rows: [{ label: '5h', remainingPercent: 0, resetAtMs: Date.parse('2020-01-01T00:00:00Z') }] });
     expect(html).toContain('重置时间已到，请刷新确认');
     expect(html).toContain('剩余 0%');
+    const antigravityHtml = render({
+      status: 'success',
+      rows: [
+        { label: 'Gemini 模型 · 5 小时额度', remainingPercent: 100 },
+        { label: 'Gemini 模型 · 每周额度', remainingPercent: 94 },
+      ],
+    }, 'antigravity');
+    expect(antigravityHtml).toContain('data-provider="antigravity"');
   });
 });

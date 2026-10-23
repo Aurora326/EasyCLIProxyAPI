@@ -1127,13 +1127,23 @@ button.danger-button:hover:not(:disabled),
 }
 
 /* --- 额度查询页：标签退后，数值上前 --- */
+.real-quota-row {
+  min-width: 0;
+}
+
 .real-quota-row > div:first-child span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   color: var(--clean-text-secondary) !important;
   font-size: 12.5px !important;
   font-weight: 500 !important;
 }
 
 .real-quota-row > div:first-child strong {
+  flex-shrink: 0;
+  white-space: nowrap;
   color: var(--clean-text-primary) !important;
   font-size: 15px !important;
   font-weight: 700 !important;

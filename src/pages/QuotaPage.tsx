@@ -217,7 +217,7 @@ export function QuotaPage() {
       ) : (
         <div className="quota-group-list">
           {grouped.map(([provider, items]) => (
-            <section className="quota-provider-group" key={provider}>
+            <section className="quota-provider-group" data-provider={provider} key={provider}>
               <div className="quota-group-heading"><div><img src={providerMeta[provider].icon} alt="" className={provider === 'devin' ? 'provider-logo devin-logo' : 'provider-logo'} /><h2>{providerMeta[provider].label}</h2></div><span>{t(items.length === 1 ? 'quota.credentials.one' : 'quota.credentials.other', { count: items.length })}</span></div>
               <div className="real-quota-grid">{items.map(({ file, quota }) => <QuotaCard key={quotaKey(file)} file={file} quota={quota} displayMode={displayMode} onRefresh={() => void refreshOne(file)} onReset={provider === 'codex' ? () => void resetCodexQuota(file, quota) : undefined} />)}</div>
             </section>
@@ -272,7 +272,7 @@ export function QuotaCard({
   }, [quota.status, quota.rows, provider, displayMode, source]);
 
   return (
-    <article className="panel real-quota-card">
+    <article className="panel real-quota-card" data-provider={provider ?? undefined}>
       <div className="real-quota-card-header">
         <div><strong title={name}>{name}</strong><span>{provider ? providerMeta[provider].label : t('quota.unknownProvider')}{quota.plan ? ' · ' + quota.plan : ''}</span></div>
         <div className="quota-card-actions">
