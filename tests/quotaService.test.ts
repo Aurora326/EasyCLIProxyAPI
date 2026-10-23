@@ -432,4 +432,62 @@ describe('Antigravity model quota merger', () => {
     expect(gemini5h).toBeDefined();
     expect(gemini5h?.remainingPercent).toBe(85);
   });
+
+  it('Gemini 4 Argon 等只有周额度的专属模型分组不会被强行注入 5 小时配额', () => {
+    const summary = {
+      groups: [
+        {
+          displayName: 'Gemini Models',
+          buckets: [
+            {
+              bucketId: 'gemini-5h',
+              displayName: 'Five Hour Limit Remaining',
+              window: '5h',
+              remainingFraction: 1,
+            },
+            {
+              bucketId: 'gemini-weekly',
+              displayName: 'Weekly Limit Remaining',
+              window: 'weekly',
+              remainingFraction: 0.95,
+            },
+          ],
+        },
+        {
+          displayName: 'Gemini 4 Argon',
+          buckets: [
+            {
+              bucketId: 'gemini-4-argon-weekly',
+              displayName: 'Weekly Limit Remaining',
+              window: 'weekly',
+              remainingFraction: 0.69,
+              resetTime: '2026-10-30T08:40:00Z',
+            },
+          ],
+        },
+      ],
+    };
+
+    const models = {
+      models: {
+        'gemini-2.5-pro': {
+          quotaInfo: {
+            remainingFraction: 0.99,
+            resetTime: '2026-10-23T18:41:00Z',
+          },
+        },
+      },
+    };
+
+    const merged = mergeAntigravityQuotaSummary(summary, models);
+    const rows = quotaRowsFor('antigravity', merged);
+
+    const argonRows = rows.filter((r) => r.label.includes('Gemini 4 Argon'));
+    expect(argonRows).toHaveLength(1);
+    expect(argonRows[0].label).toContain('每周');
+    expect(argonRows[0].remainingPercent).toBe(69);
+
+    const gemini5hRow = rows.find((r) => r.label.startsWith('Gemini 模型') && r.label.includes('5 小时'));
+    expect(gemini5hRow?.remainingPercent).toBe(99);
+  });
 });

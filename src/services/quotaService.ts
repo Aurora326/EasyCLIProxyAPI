@@ -396,7 +396,7 @@ export const extractAntigravityModelQuotas = (
     const resetTime = readString(rawQuota, 'reset_time', 'resetTime');
     const lowerName = name.toLowerCase();
 
-    if (!geminiQuota && (lowerName.includes('gemini') || lowerName.startsWith('gemini'))) {
+    if (!geminiQuota && (lowerName.includes('gemini') || lowerName.startsWith('gemini')) && !lowerName.includes('argon')) {
       geminiQuota = { remainingFraction: fraction, resetTime: resetTime || undefined };
     }
     if (!claudeQuota && (lowerName.includes('claude') || lowerName.includes('gpt') || lowerName.startsWith('3p'))) {
@@ -424,8 +424,8 @@ export const mergeAntigravityQuotaSummary = (
   const nextGroups = rawGroups.map((group) => {
     if (!isRecord(group)) return group;
     const gName = (readString(group, 'display_name', 'displayName') || '').toLowerCase();
-    const isGemini = gName.includes('gemini');
-    const isClaude = gName.includes('claude') || gName.includes('gpt');
+    const isGemini = gName === 'gemini models' || gName === 'gemini model';
+    const isClaude = gName === 'claude and gpt models' || gName === 'claude and gpt' || gName.startsWith('claude and gpt');
 
     if (isGemini) foundGeminiGroup = true;
     if (isClaude) foundClaudeGroup = true;
